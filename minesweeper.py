@@ -1,27 +1,64 @@
 import collections
 
-
-Rule = collections.namedtuple('Rule', ['num_mines', 'cells'])
-# num_mines: # of mines contained in 'cells'
-# cells: set of cell ids
-def r(num_mines, *cell_ids):
-    return Rule(num_mines, set_(cell_ids))
-
-Rule_ = collections.namedtuple('Rule_', ['num_mines', 'num_cells', 'cells_'])
-# num_mines: # of mines contained in 'cells_'
-# num_cells: # of base cells in 'cells_'
-# cells: set of supercells; each supercell a set of base cells
+class InconsistencyError(Exception):
+    pass
 
 MineCount = collections.namedtuple('MineCount', ['total_cells', 'total_mines'])
 # total_cells: total # of cells on board; all cells contained in rules + all
 #   'uncharted' cells
 # total_mines: total # of mines contained within all cells
 
-class InconsistencyError(Exception):
-    pass
+class Rule(object):
+    # num_mines: # of mines contained in 'cells'
+    # cells: set of cell ids
+
+    def __init__(self, num_mines, cells):
+        self.num_mines = num_mines
+        self.cells = set_(cells)
+
+    def condensed(self, rule_supercells_map):
+        return Rule_(self.num_mines, len(self.cells), rule_supercells_map[self])
+
+    def __repr__(self):
+        return 'Rule(num_mines=%d, cells=%s)' % (self.num_mines, sorted(list(self.cells)))
+
+class Rule_(object):
+    # num_mines: # of mines contained in 'cells_'
+    # num_cells: # of base cells in 'cells_'
+    # cells: set of supercells; each supercell a set of base cells
+    
+    def __init__(self, num_mines, num_cells, cells_):
+        self.num_mines = num_mines
+        self.num_cells = num_cells
+        self.cells_ = cells_
+
+        if self.num_mines < 0 or self.num_mines > self.num_cells:
+            raise InconsistencyError()
+
+    def decompose(self):
+        if self.num_mines == 0 or self.num_mines == self.num_cells:
+            for cell_ in self.cells_:
+                size = len(cell_)
+                yield Rule_(size if self.num_mines > 0 else 0, size, set_([cell_]))
+            # degenerate rules (no cells) disappear here
+        else:
+            yield self
+
+    def subtract(self, subrule):
+        return Rule_(self.num_mines - subrule.num_mines,
+                     self.num_cells - subrule.num_cells,
+                     self.cells_ - subrule.cells_)
+
+    def __repr__(self):
+        return 'Rule_(num_mines=%d, num_cells=%d, cells_=%s)' % (self.num_mines, self.num_cells,
+            sorted([sorted(list(cell_)) for cell_ in self.cells_]))
+
+    @staticmethod
+    def _mk(num_mines, cells_):
+        return Rule_(num_mines, sum(len(cell_) for cell_ in cells_), set_(set_(cell_) for cell_ in cells_))
 
 def solve(rules, mine_prevalence):
-    
+    # mine_prevalence is a MineCount or float (base probability that cell is mine)
 
     rules, _ = condense_supercells(rules)
     rules = reduce_rules(rules)
@@ -30,30 +67,12 @@ def condense_supercells(rules):
     cell_rules_map = map_reduce(rules, lambda rule: [(cell, rule) for cell in rule.cells], set_)
     rules_supercell_map = map_reduce(cell_rules_map.iteritems(), lambda (cell, rules): [(rules, cell)], set_)
     rule_supercells_map = map_reduce(rules_supercell_map.iteritems(), lambda (rules, cell_): [(rule, cell_) for rule in rules], set_)
-
-    def condense_rule(rule):
-        return Rule_(rule.num_mines, len(rule.cells), rule_supercells_map[rule])
-    return ([condense_rule(rule) for rule in rules], rules_supercell_map.values())
+    return ([rule.condensed(rule_supercells_map) for rule in rules], rules_supercell_map.values())
 
 def reduce_rules(rules):
     print rules
 
 
-def split_rule(rule):
-    if rule.num_mines < 0 or rule.num_mines > rule.num_cells:
-        raise InconsistencyError()
-    elif rule.num_mines == 0 or rule.num_mines == rule.num_cells:
-        for cell_ in rule.cells_:
-            size = len(cell_)
-            yield Rule_(size if rule.num_mines > 0 else 0, size, set_([cell_]))
-        # degenerate rules (no cells) disappear here
-    else:
-        yield rule
-
-def subtract_rule(superrule, subrule):
-    return Rule_(superrule.num_mines - subrule.num_mines,
-                 superrule.num_cells - subrule.num_cells,
-                 superrule.cells_ - subrule.cells_)
 
 #  fun reduceRules (candidateRules : rule IntMap.map, allCells : IntRel) (*: (rule IntMap.map * graph)*) = let
 #    fun addRule (candidateRule, (builtRules, cellRulesMap, ruleInterference, ruleReductions)) = let 
