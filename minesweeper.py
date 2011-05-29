@@ -49,12 +49,22 @@ class Rule_(object):
                      self.num_cells - subrule.num_cells,
                      self.cells_ - subrule.cells_)
 
+    def permute(self):
+        pass
+
+    def is_subrule_of(self, parent):
+        return self.cells_.issubset(parent.cells_)
+        # equivalent rules are subrules of each other
+
     def __repr__(self):
         return 'Rule_(num_mines=%d, num_cells=%d, cells_=%s)' % (self.num_mines, self.num_cells,
             sorted([sorted(list(cell_)) for cell_ in self.cells_]))
 
     @staticmethod
-    def _mk(num_mines, cells_):
+    def mk(num_mines, cells_):
+        def listify(x):
+            return x if hasattr(x, '__iter__') else [x]
+        cells_ = [listify(cell_) for cell_ in cells_]
         return Rule_(num_mines, sum(len(cell_) for cell_ in cells_), set_(set_(cell_) for cell_ in cells_))
 
 def solve(rules, mine_prevalence):
@@ -70,7 +80,88 @@ def condense_supercells(rules):
     return ([rule.condensed(rule_supercells_map) for rule in rules], rules_supercell_map.values())
 
 def reduce_rules(rules):
-    print rules
+    rr = RuleReducer()
+    rr.add_rules(rules)
+    return rr.reduce_all()
+
+class Reduceable(object):
+    def __init__(self, superrule, subrule):
+        self.superrule = superrule
+        self.subrule = subrule
+
+    def metric(self):
+        num_reduced_cells = self.superrule.num_cells - self.subrule.num_cells
+        num_reduced_mines = self.superrule.num_mines - self.subrule.num_mines
+        # favor reductions that involve bigger rules, and amongst same-sized rules, those
+        # that yield # mines towards the extremes -- such rules have fewer permutations
+        return (self.superrule.num_cells, self.subrule.num_cells,
+                abs(num_reduced_mines - .5 * num_reduced_cells))
+
+    def reduce(self):
+        return self.superrule.subtract(self.subrule)
+
+    def contains(self, rule):
+        return rule in (self.superrule, self.subrule)
+
+class RuleReducer(object):
+    def __init__(self):
+        # current list of rules
+        self.active_rules = []
+        # mapping of cells to list of rules containing that cell
+        self.cell_rules_map = collections.defaultdict(list)
+        # current list of all possible reductions
+        self.candidate_reductions = [] #could make this a priority queue for efficiency
+
+    def add_rules(self, rules):
+        for rule in rules:
+            self.add_rule(rule)
+
+    def add_rule(self, rule):
+        for base_rule in rule.decompose():
+            self.add_base_rule(base_rule)
+
+    def add_base_rule(self, rule):
+        self.active_rules.append(rule)
+        # update reduceables before cell index or else rule will reduce against itself
+        self.update_reduceables(rule)
+        for cell_ in rule.cells_:
+            self.cell_rules_map[cell_].append(rule)
+
+    def update_reduceables(self, rule):
+        overlapping_rules = reduce(lambda a, b: a.union(b), (self.cell_rules_map[cell_] for cell_ in rule.cells_), set())
+        for rule_ov in overlapping_rules:
+            if rule_ov.is_subrule_of(rule):
+                # catches if rules are equivalent
+                self.candidate_reductions.append(Reduceable(rule, rule_ov))
+            elif rule.is_subrule_of(rule_ov):
+                self.candidate_reductions.append(Reduceable(rule_ov, rule))
+
+    def remove_rule(self, rule):
+        self.active_rules.remove(rule)
+        for cell_ in rule.cells_:
+            self.cell_rules_map[cell_].remove(rule)
+        # could make this more efficient with an index rule -> reduceables
+        for reduc in self.candidate_reductions:
+            if reduc.contains(rule):
+                self.candidate_reductions.remove(reduc)
+
+    def pop_best_reduction(self):
+        reduction = max(self.candidate_reductions, key=lambda reduc: reduc.metric())
+        self.candidate_reductions.remove(reduction)
+        return reduction
+
+    def reduce(self, reduction):
+        reduced_rule = reduction.reduce()
+        self.remove_rule(reduction.superrule)
+        self.add_rule(reduced_rule)
+
+    def reduce_all(self):
+        while self.candidate_reductions:
+            self.reduce(self.pop_best_reduction())
+
+        return self.active_rules
+
+
 
 
 
@@ -212,14 +303,12 @@ def map_reduce(data, emitfunc=lambda rec: [(rec,)], reducefunc=lambda v: v):
         returning the list
     data: iterable of data to operate on
     """
-    mapped = {}
+    mapped = collections.defaultdict(list)
     for rec in data:
         for emission in emitfunc(rec):
             try:
                 k, v = emission
             except ValueError:
                 k, v = emission[0], None
-            if k not in mapped:
-                mapped[k] = []
             mapped[k].append(v)
     return dict((k, reducefunc(v)) for k, v in mapped.iteritems())
