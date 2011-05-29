@@ -119,16 +119,42 @@ class Reduceable(object):
     def __repr__(self):
         return 'Reduceable(superrule=%s, subrule=%s)' % (self.superrule, self.subrule)
 
-#class CellRulesMap(object):
-#    def __init__(self, rules=[]):
-#        self.map = collections.defaul
+class CellRulesMap(object):
+    def __init__(self, rules=[]):
+        self.map = collections.defaultdict(set)
+        self.rules = []
+        self.add_rules(rules)
+
+    def add_rules(self, rules):
+        for rule in rules:
+            self.add_rule(rule)
+
+    def add_rule(self, rule):
+        self.rules.append(rule)
+        for cell_ in rule.cells_:
+            self.map[cell_].add(rule)
+
+    def remove_rule(self, rule):
+        self.rules.remove(rule)
+        for cell_ in rule.cells_:
+            self.map[cell_].remove(rule)
+
+    def overlapping_rules(self, rule):
+        return reduce(lambda a, b: a.union(b), (self.map[cell_] for cell_ in rule.cells_), set()) - set([rule])
+
+    def interference_edges(self):
+        interferences = set()
+        for rule in self.rules:
+            for rule_ov in self.overlapping_rules(rule):
+                interferences.add((rule, rule_ov))
+        return interferences
 
 class RuleReducer(object):
     def __init__(self):
         # current list of rules
         self.active_rules = set()
-        # mapping of cells to list of rules containing that cell
-        self.cell_rules_map = collections.defaultdict(set)
+        # reverse lookup for rules containing a given cell
+        self.cell_rules_map = CellRulesMap()
         # current list of all possible reductions
         self.candidate_reductions = set() #could make this a priority queue for efficiency
 
@@ -142,12 +168,11 @@ class RuleReducer(object):
 
     def add_base_rule(self, rule):
         self.active_rules.add(rule)
-        for cell_ in rule.cells_:
-            self.cell_rules_map[cell_].add(rule)
+        self.cell_rules_map.add_rule(rule)
         self.update_reduceables(rule)
 
     def update_reduceables(self, rule):
-        rules_ov = overlapping_rules(rule, self.cell_rules_map)
+        rules_ov = self.cell_rules_map.overlapping_rules(rule)
         for rule_ov in rules_ov:
             if rule_ov.is_subrule_of(rule):
                 # catches if rules are equivalent
@@ -157,8 +182,7 @@ class RuleReducer(object):
 
     def remove_rule(self, rule):
         self.active_rules.remove(rule)
-        for cell_ in rule.cells_:
-            self.cell_rules_map[cell_].remove(rule)
+        self.cell_rules_map.remove_rule(rule)
         # could make this more efficient with an index rule -> reduceables
         self.candidate_reductions = set(reduc for reduc in self.candidate_reductions if not reduc.contains(rule))
 
@@ -177,9 +201,6 @@ class RuleReducer(object):
             self.reduce(self.pop_best_reduction())
 
         return self.active_rules
-
-def overlapping_rules(rule, cell_rules_map):
-    return reduce(lambda a, b: a.union(b), (cell_rules_map[cell_] for cell_ in rule.cells_), set()) - set([rule])
 
 class Permutation(object):
     def __init__(self, mapping):
@@ -222,26 +243,11 @@ def permute(count, cells, permu=None):
                 for p in permute(count - multiplicity, cells[1:], permu_add((cell, multiplicity))):
                     yield p
 
-def interfering_rules(rules):
-    cell_rules_map = collections.defaultdict(set)
-    for rule in rules:
-        for cell_ in rule.cells_:
-            cell_rules_map[cell_].add(rule)
-
-    def get_overlapping(rule):
-        return overlapping_rules(rule, cell_rules_map)
-
-    interferences = set()
-    for r in rules:
-        overlapping = get_overlapping(r)
-        for r_ov in overlapping:
-            interferences.add((r, r_ov))
-    return interferences, get_overlapping
-
 def permute_and_interfere(rules):
+    cell_rules_map = CellRulesMap(rules)
     permumap = dict((rule, list(rule.permute())) for rule in rules)
 
-    interferences, get_overlapping = interfering_rules(rules)
+    interferences = cell_rules_map.interference_edges()
     while interferences:
         r, r_ov = interferences.pop()
         changed = False
@@ -256,7 +262,7 @@ def permute_and_interfere(rules):
             raise InconsistencyError()
         elif changed:
             # other rules overlapping with this one must be recalculated
-            for r_other in get_overlapping(r):
+            for r_other in cell_rules_map.overlapping_rules(r):
                 interferences.add((r_other, r))
 
     print permumap
