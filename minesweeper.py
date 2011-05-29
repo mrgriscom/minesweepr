@@ -166,132 +166,38 @@ class RuleReducer(object):
 
 
 
-#  fun reduceRules (candidateRules : rule IntMap.map, allCells : IntRel) (*: (rule IntMap.map * graph)*) = let
-#    fun addRule (candidateRule, (builtRules, cellRulesMap, ruleInterference, ruleReductions)) = let 
-#      fun add (rule, (builtRules, cellRulesMap, ruleInterference, ruleReductions)) = let
-#        val ruleid = getUid()
-#        val {cells, ...} = rule
-#        val numCells = IntSet.numItems(cells)
-#        val ruleFull = (ruleid, rule)
-#
-#        fun indexRuleByCell (cell, (cellRulesMap, ruleInterference, ruleReductions)) = let
-#          val relatedRules = case IntMap.find(cellRulesMap, cell) of
-#                               SOME x => x
-#                             | NONE => IntSet.empty
-#
-#          fun relateRule () = let
-#            fun relateRuleByCell (relatedRule, (ruleInterference, ruleReductions)) = let
-#              val otherRule = valOf(IntMap.find(builtRules, relatedRule))
-#              val numCellsOther = IntSet.numItems(#cells otherRule)
-#              val otherRuleFull = (relatedRule, otherRule)
-#
-#              val subset = IntSet.add(case graphEdgeData(ruleInterference, (ruleid, relatedRule)) of 
-#                                        SOME x => x
-#                                      | NONE => IntSet.empty, cell)
-#
-#              val reduction = if IntSet.numItems subset = numCells then
-#                                SOME {subset = ruleFull, superset = otherRuleFull}
-#                              else if IntSet.numItems subset = numCellsOther then
-#                                SOME {subset = otherRuleFull, superset = ruleFull}
-#                              else
-#                                NONE
-#            in
-#              (graphAddEdge(ruleInterference, (ruleid, relatedRule), subset),
-#               case reduction of SOME x => RRPQ.insert(x, ruleReductions)
-#                               | NONE => ruleReductions)
-#            end
-#          in
-#            IntSet.foldl relateRuleByCell (ruleInterference, ruleReductions) relatedRules
-#          end
-#
-#          val cellRulesMap = IntMap.insert(cellRulesMap, cell, IntSet.add(relatedRules, ruleid))
-#          val (ruleInterference, ruleReductions) = relateRule()
-#        in
-#          (cellRulesMap, ruleInterference, ruleReductions)
-#        end
-#
-#        val builtRules = IntMap.insert(builtRules, ruleid, rule)
-#        val ruleInterference = graphAddNode(ruleInterference, ruleid)
-#        val (cellRulesMap, ruleInterference, ruleReductions) = IntSet.foldl indexRuleByCell (cellRulesMap, ruleInterference, ruleReductions) cells
-#      in
-#        (* debug *) print ("adding rule " ^ (Int.toString ruleid) ^ " (" ^ (strrule rule) ^ "):\n");
-#        (* debug *) print ("rule added. current state:\n" ^ strreducstate(builtRules, cellRulesMap, ruleInterference, ruleReductions));
-#
-#        (builtRules, cellRulesMap, ruleInterference, ruleReductions)
-#      end
-#
-#      fun degenerateRule (cell, hasMines) = let
-#        val numCells' = IntSet.numItems(valOf(IntMap.find(allCells, cell)))
-#        val numMines = if hasMines then numCells' else 0
-#      in
-#        {numCells' = numCells', numMines = numMines, cells = IntSet.singleton(cell)}
-#      end
-#      
-#      val {numMines, numCells', cells} = candidateRule
-#      val numCells = IntSet.numItems cells
-#    in
-#      (* debug *) print ("adding candidate (" ^ (strrule candidateRule) ^ "):\n");
-#
-#      if (numMines < 0) orelse (numMines > numCells') then (* inconsistent *)
-#        ((* debug *) print "inconsistent rule!!\n";
-#        raise Inconsistent
-#        )
-#      else if numCells = 0 then (* empty *)
-#        ((* debug *) print "empty rule\n";
-#        (builtRules, cellRulesMap, ruleInterference, ruleReductions)
-#        )
-#      else if numCells > 1 andalso ((numMines = 0) orelse (numMines = numCells')) then (* splittable *)
-#        ((* debug *) print "splitting rule\n";
-#        IntSet.foldl (fn (cell, indexState) => add(degenerateRule(cell, numMines > 0), indexState)) (builtRules, cellRulesMap, ruleInterference, ruleReductions) cells
-#        )
-#      else
-#        add(candidateRule, (builtRules, cellRulesMap, ruleInterference, ruleReductions))
-#    end
-#
-#    fun removeRule (ruleid, (builtRules, cellRulesMap, ruleInterference, ruleReductions)) = let
-#      val (builtRules, {cells, ...} : rule) = IntMap.remove(builtRules, ruleid)
-#      val cellRulesMap = IntSet.foldl (fn (cell, crm) =>  IntMap.insert(crm, cell, IntSet.delete(valOf(IntMap.find(crm, cell)), ruleid))) cellRulesMap cells
-#      val ruleInterference = graphDeleteNode(ruleInterference, ruleid)
-#      val ruleReductions = RRPQfilter (fn ({subset = (sub, _), superset = (sup, _)}) => not (sub = ruleid orelse sup = ruleid)) ruleReductions
-#    in
-#      (builtRules, cellRulesMap, ruleInterference, ruleReductions)
-#    end
-#
-#    fun subtractRule ({numCells' = subNumCells', numMines = subNumMines, cells = subCells},
-#                      {numCells' = supNumCells', numMines = supNumMines, cells = supCells}) =
-#      {numCells' = supNumCells' - subNumCells', numMines = supNumMines - subNumMines, cells = IntSet.difference(supCells, subCells)}
-#
-#    fun reduceRule (reduction, (builtRules, cellRulesMap, ruleInterference, ruleReductions)) = let
-#      val {subset = (_, subsetRule), superset = (superset, supersetRule)} = reduction
-#
-#      (* debug *) val xxx = let in print ("reducing rule " ^ (Int.toString superset) ^ " by rule " ^ (Int.toString (#1 (#subset reduction))) ^ "\n") end
-#
-#      val reducedRule = subtractRule(subsetRule, supersetRule)
-#      val (builtRules, cellRulesMap, ruleInterference, ruleReductions) = removeRule(superset, (builtRules, cellRulesMap, ruleInterference, ruleReductions))
-#      val (builtRules, cellRulesMap, ruleInterference, ruleReductions) = addRule(reducedRule, (builtRules, cellRulesMap, ruleInterference, ruleReductions))
-#    in
-#      (builtRules, cellRulesMap, ruleInterference, ruleReductions)
-#    end
-#
-#    fun reduceAll (builtRules, cellRulesMap, ruleInterference, ruleReductions) = if RRPQ.isEmpty ruleReductions then
-#      (builtRules, cellRulesMap, ruleInterference, ruleReductions)
-#    else let val (reduction, ruleReductions) = RRPQ.remove(ruleReductions) in
-#      reduceAll(reduceRule(reduction, (builtRules, cellRulesMap, ruleInterference, ruleReductions)))
-#    end
-#
-#    val (builtRules, cellRulesMap, ruleInterference, ruleReductions) = IntMap.foldl addRule (IntMap.empty, IntMap.empty, graphEmpty(), RRPQ.empty) candidateRules
-#    val (builtRules, cellRulesMap, ruleInterference, ruleReductions) = reduceAll(builtRules, cellRulesMap, ruleInterference, ruleReductions)
-#  in
-#    (* debug *) print ("\n\nfinal reduction:\n" ^ strreducstate(builtRules, cellRulesMap, ruleInterference, ruleReductions));
-#    (builtRules, cellRulesMap, ruleInterference) (* (builtRules, ruleInterference) *)
-#  end
+def read_board(board, total_mines):
+    #. = blank; * = mine; x = unknown; N = count
+    lines = [ln.strip() for ln in board.strip().split('\n')]
+    height = len(lines)
+    width = len(lines[0])
 
+    def adjacent((row, col)):
+        for r in range(max(row - 1, 0), min(row + 2, height)):
+            for c in range(max(col - 1, 0), min(col + 2, width)):
+                if (r, c) != (row, col):
+                    yield (r, c)
 
+    cells = {}
+    for row, ln in enumerate(lines):
+        for col, c in enumerate(ln):
+            cells[(row, col)] = c
 
+    rules = []
+    clears = []
+    for cell_id, state in cells.iteritems():
+        if state == '*':
+            rules.append(Rule(1, [cell_id]))
+        elif state in '.':
+            clears.append(cell_id)
+        elif state in '12345678':
+            clears.append(cell_id)
+            neighbors = dict((neighb_id, cells[neighb_id]) for neighb_id in adjacent(cell_id))
+            if 'x' in neighbors.values():
+                rules.append(Rule(int(state), [neighb_id for neighb_id, neighb_state in neighbors.iteritems() if neighb_state in ('x', '*')]))
+    rules.append(Rule(0, clears))
 
-
-
-
+    return rules
 
 set_ = frozenset
 
