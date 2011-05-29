@@ -74,6 +74,11 @@ def solve(rules, mine_prevalence):
     rules, _ = condense_supercells(rules)
     rules = reduce_rules(rules)
 
+    for r in rules:
+        print r
+        for p in sorted([str(px) for px in r.permute()]):
+            print p
+
 def condense_supercells(rules):
     cell_rules_map = map_reduce(rules, lambda rule: [(cell, rule) for cell in rule.cells], set_)
     rules_supercell_map = map_reduce(cell_rules_map.iteritems(), lambda (cell, rules): [(rules, cell)], set_)
@@ -199,15 +204,18 @@ def read_board(board, total_mines, include_all_mines=False, include_clears=False
     width = len(lines[0])
 
     def adjacent((row, col)):
-        for r in range(max(row - 1, 0), min(row + 2, height)):
-            for c in range(max(col - 1, 0), min(col + 2, width)):
+        for r in range(max(row - 1, 1), min(row + 2, height + 1)):
+            for c in range(max(col - 1, 1), min(col + 2, width + 1)):
                 if (r, c) != (row, col):
                     yield (r, c)
 
     cells = {}
     for row, ln in enumerate(lines):
         for col, c in enumerate(ln):
-            cells[(row, col)] = c
+            cells[(row + 1, col + 1)] = c
+
+    def mkrule(mines, cells):
+        return Rule(mines, ['%d-%d' % cell for cell in cells])
 
     rules = []
     clears = []
@@ -215,19 +223,19 @@ def read_board(board, total_mines, include_all_mines=False, include_clears=False
     for cell_id, state in cells.iteritems():
         if state == '*':
             if include_all_mines:
-                rules.append(Rule(1, [cell_id]))
+                rules.append(mkrule(1, [cell_id]))
         elif state in '.':
             clears.append(cell_id)
         elif state in '12345678':
             clears.append(cell_id)
             neighbors = dict((nid, cells[nid]) for nid in adjacent(cell_id))
             if 'x' in neighbors.values():
-                rules.append(Rule(int(state), [nid for nid, nstate in neighbors.iteritems() if nstate in ('x', '*')]))
+                rules.append(mkrule(int(state), [nid for nid, nstate in neighbors.iteritems() if nstate in ('x', '*')]))
                 relevant_mines.update([nid for nid, nstate in neighbors.iteritems() if nstate == '*'])
     if include_clears:
-        rules.append(Rule(0, clears))
+        rules.append(mkrule(0, clears))
     if not include_all_mines:
-        rules.append(Rule(len(relevant_mines), relevant_mines))
+        rules.append(mkrule(len(relevant_mines), relevant_mines))
 
     return rules
 
