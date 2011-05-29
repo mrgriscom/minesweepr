@@ -50,7 +50,8 @@ class Rule_(object):
                      self.cells_ - subrule.cells_)
 
     def permute(self):
-        pass
+        for p in permute(self.num_mines, list(self.cells_)):
+            yield p
 
     def is_subrule_of(self, parent):
         return self.cells_.issubset(parent.cells_)
@@ -162,11 +163,36 @@ class RuleReducer(object):
 
         return self.active_rules
 
+class Permutation(object):
+    def __init__(self, mapping):
+        self.mapping = dict(mapping)
+
+    def __repr__(self):
+        cell_counts = sorted([(sorted(list(cell)), count) for cell, count in self.mapping.iteritems()])
+        cell_frags = ['%s:%d' % (','.join(str(c) for c in cell), count) for cell, count in cell_counts]
+        return '{%s}' % ' '.join(cell_frags)
+
+def permute(count, cells, permu=None):
+    def permu_add(*k):
+        return permu.union(k)
+
+    if permu is None:
+        permu = set()
+
+    if count == 0:
+        yield Permutation(permu_add(*[(cell, 0) for cell in cells]))
+    else:
+        remaining_size = sum(len(cell) for cell in cells)
+        if remaining_size == count:
+            yield Permutation(permu_add(*[(cell, len(cell)) for cell in cells]))
+        elif remaining_size >= count:
+            cell = cells[0]
+            for multiplicity in range(min(count, len(cell)), -1, -1):
+                for p in permute(count - multiplicity, cells[1:], permu_add((cell, multiplicity))):
+                    yield p
 
 
-
-
-def read_board(board, total_mines):
+def read_board(board, total_mines, include_all_mines=False, include_clears=False):
     #. = blank; * = mine; x = unknown; N = count
     lines = [ln.strip() for ln in board.strip().split('\n')]
     height = len(lines)
@@ -185,17 +211,23 @@ def read_board(board, total_mines):
 
     rules = []
     clears = []
+    relevant_mines = set()
     for cell_id, state in cells.iteritems():
         if state == '*':
-            rules.append(Rule(1, [cell_id]))
+            if include_all_mines:
+                rules.append(Rule(1, [cell_id]))
         elif state in '.':
             clears.append(cell_id)
         elif state in '12345678':
             clears.append(cell_id)
-            neighbors = dict((neighb_id, cells[neighb_id]) for neighb_id in adjacent(cell_id))
+            neighbors = dict((nid, cells[nid]) for nid in adjacent(cell_id))
             if 'x' in neighbors.values():
-                rules.append(Rule(int(state), [neighb_id for neighb_id, neighb_state in neighbors.iteritems() if neighb_state in ('x', '*')]))
-    rules.append(Rule(0, clears))
+                rules.append(Rule(int(state), [nid for nid, nstate in neighbors.iteritems() if nstate in ('x', '*')]))
+                relevant_mines.update([nid for nid, nstate in neighbors.iteritems() if nstate == '*'])
+    if include_clears:
+        rules.append(Rule(0, clears))
+    if not include_all_mines:
+        rules.append(Rule(len(relevant_mines), relevant_mines))
 
     return rules
 
