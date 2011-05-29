@@ -103,14 +103,17 @@ class Reduceable(object):
     def contains(self, rule):
         return rule in (self.superrule, self.subrule)
 
+    def __repr__(self):
+        return 'Reduceable(superrule=%s, subrule=%s)' % (self.superrule, self.subrule)
+
 class RuleReducer(object):
     def __init__(self):
         # current list of rules
-        self.active_rules = []
+        self.active_rules = set()
         # mapping of cells to list of rules containing that cell
-        self.cell_rules_map = collections.defaultdict(list)
+        self.cell_rules_map = collections.defaultdict(set)
         # current list of all possible reductions
-        self.candidate_reductions = [] #could make this a priority queue for efficiency
+        self.candidate_reductions = set() #could make this a priority queue for efficiency
 
     def add_rules(self, rules):
         for rule in rules:
@@ -121,29 +124,27 @@ class RuleReducer(object):
             self.add_base_rule(base_rule)
 
     def add_base_rule(self, rule):
-        self.active_rules.append(rule)
+        self.active_rules.add(rule)
         # update reduceables before cell index or else rule will reduce against itself
         self.update_reduceables(rule)
         for cell_ in rule.cells_:
-            self.cell_rules_map[cell_].append(rule)
+            self.cell_rules_map[cell_].add(rule)
 
     def update_reduceables(self, rule):
         overlapping_rules = reduce(lambda a, b: a.union(b), (self.cell_rules_map[cell_] for cell_ in rule.cells_), set())
         for rule_ov in overlapping_rules:
             if rule_ov.is_subrule_of(rule):
                 # catches if rules are equivalent
-                self.candidate_reductions.append(Reduceable(rule, rule_ov))
+                self.candidate_reductions.add(Reduceable(rule, rule_ov))
             elif rule.is_subrule_of(rule_ov):
-                self.candidate_reductions.append(Reduceable(rule_ov, rule))
+                self.candidate_reductions.add(Reduceable(rule_ov, rule))
 
     def remove_rule(self, rule):
         self.active_rules.remove(rule)
         for cell_ in rule.cells_:
             self.cell_rules_map[cell_].remove(rule)
         # could make this more efficient with an index rule -> reduceables
-        for reduc in self.candidate_reductions:
-            if reduc.contains(rule):
-                self.candidate_reductions.remove(reduc)
+        self.candidate_reductions = set(reduc for reduc in self.candidate_reductions if not reduc.contains(rule))
 
     def pop_best_reduction(self):
         reduction = max(self.candidate_reductions, key=lambda reduc: reduc.metric())
