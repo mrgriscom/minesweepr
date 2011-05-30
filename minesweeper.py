@@ -41,7 +41,11 @@ class Rule(object):
         self.cells = set_(cells)
 
     def condensed(self, rule_supercells_map):
-        return Rule_(self.num_mines, rule_supercells_map[self], len(self.cells))
+        return Rule_(
+            self.num_mines,
+            rule_supercells_map.get(self, set_()), # default to handle degenerate rules
+            len(self.cells)
+        )
 
     def __repr__(self):
         return 'Rule(num_mines=%d, cells=%s)' % (self.num_mines, sorted(list(self.cells)))
@@ -99,6 +103,7 @@ def condense_supercells(rules):
     cell_rules_map = map_reduce(rules, lambda rule: [(cell, rule) for cell in rule.cells], set_)
     rules_supercell_map = map_reduce(cell_rules_map.iteritems(), lambda (cell, rules): [(rules, cell)], set_)
     rule_supercells_map = map_reduce(rules_supercell_map.iteritems(), lambda (rules, cell_): [(rule, cell_) for rule in rules], set_)
+
     return ([rule.condensed(rule_supercells_map) for rule in rules], rules_supercell_map.values())
 
 def reduce_rules(rules):
