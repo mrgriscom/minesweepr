@@ -10,6 +10,28 @@ MineCount = collections.namedtuple('MineCount', ['total_cells', 'total_mines'])
 #   'uncharted' cells
 # total_mines: total # of mines contained within all cells
 
+def solve(rules, mine_prevalence):
+    # mine_prevalence is a MineCount or float (base probability that cell is mine)
+
+    rules, _ = condense_supercells(rules)
+    rules = reduce_rules(rules)
+
+    determined = set(r for r in rules if r.is_trivial())
+    rules -= determined
+
+    ruleset = permute_and_interfere(rules)
+    fronts = ruleset.split_fronts()
+
+    trivial_fronts = set(f for f in fronts if f.is_trivial())
+    determined |= set(f.trivial_rule() for f in trivial_fronts)
+    fronts -= trivial_fronts
+
+    print determined
+    print [f.cells_ for f in fronts]
+
+    for f in fronts:
+        print list(f.enumerate())
+
 class Rule(object):
     # num_mines: # of mines contained in 'cells'
     # cells: set of cell ids
@@ -72,25 +94,6 @@ class Rule_(object):
             return x if hasattr(x, '__iter__') else [x]
         cells_ = [listify(cell_) for cell_ in cells_]
         return Rule_(num_mines, set_(set_(cell_) for cell_ in cells_))
-
-def solve(rules, mine_prevalence):
-    # mine_prevalence is a MineCount or float (base probability that cell is mine)
-
-    rules, _ = condense_supercells(rules)
-    rules = reduce_rules(rules)
-
-    determined = set(r for r in rules if r.is_trivial())
-    rules -= determined
-
-    ruleset = permute_and_interfere(rules)
-    fronts = ruleset.split_fronts()
-
-    trivial_fronts = set(f for f in fronts if f.is_trivial())
-    determined |= set(f.trivial_rule() for f in trivial_fronts)
-    fronts -= trivial_fronts
-
-    print determined
-    print fronts
 
 def condense_supercells(rules):
     cell_rules_map = map_reduce(rules, lambda rule: [(cell, rule) for cell in rule.cells], set_)
@@ -166,6 +169,9 @@ class CellRulesMap(object):
                 del related_rules[rule]
         return partitions
             
+    def cells_(self):
+        return set_(self.map.keys())
+
 def graph_traverse(graph, node):
     nodes = set()
     _graph_traverse(graph, node, nodes)
@@ -241,6 +247,12 @@ class Permutation(object):
         overlap = set(self.mapping) & set(permu.mapping)
         return self.subset(overlap) == permu.subset(overlap)
 
+    def combine(self, permu):
+        # assume permu is compatible
+        mapping = dict(self.mapping)
+        mapping.update(permu.mapping)
+        return Permutation(mapping)
+
     def k(self):
         return sum(self.mapping.values())
 
@@ -301,6 +313,9 @@ class PermutationSet(object):
     def empty(self):
         return not self.permus
 
+    def compatible(self, permu):
+        return PermutationSet(self.cells_, self.k, set(p for p in self.permus if p.compatible(permu)))
+
     def decompose(self):
         return self._decompose() if self.constrained else [self]
 
@@ -357,6 +372,7 @@ class PermutedRuleset(object):
     def __init__(self, rules, permu_map=None):
         self.rules = rules
         self.cell_rules_map = CellRulesMap(rules)
+        self.cells_ = self.cell_rules_map.cells_()
         self.permu_map = dict((rule, PermutationSet.from_rule(rule)) for rule in rules) if permu_map is None else permu_map
 
     def cross_eliminate(self):
@@ -365,7 +381,7 @@ class PermutedRuleset(object):
             r, r_ov = interferences.pop()
             changed = False
             for permu in list(self.permu_map[r]): #copy iterable so we can modify original
-                if not any(permu.compatible(permu_ov) for permu_ov in self.permu_map[r_ov]):
+                if self.permu_map[r_ov].compatible(permu).empty():
                     # this permutation has no compatible permutation in the overlapping
                     # rule. thus, it can never occur
                     self.permu_map[r].remove(permu)
@@ -427,8 +443,84 @@ class PermutedRuleset(object):
         assert singleton.is_trivial()
         return singleton
 
-        # transform it anyway just to be safe
-        #return Rule_(singleton.num_mines, set([reduce(operator.or_, singleton.cells_)]))
+    def enumerate(self):
+        for mineconfig in _enumerate(EnumerationState(self)):
+            yield mineconfig
+
+def _enumerate(enum_state):
+    if enum_state.is_complete():
+        yield enum_state.mine_config()
+    else:
+        for next_state in enum_state.iterate():
+            for mineconfig in _enumerate(next_state):
+                yield mineconfig
+
+class EnumerationState(object):
+    def __init__(self, ruleset=None, from_state=None):
+        if not from_state:
+            self.fixed = set()
+            self.free = dict((rule, set(permu_set)) for rule, permu_set in ruleset.permu_map.iteritems())
+            self.overlapping_rules = lambda rule: ruleset.cell_rules_map.overlapping_rules(rule)
+            self.compatible_rule_index = self.build_compatibility_index(ruleset)
+        else:
+            # clone existing state
+            self.fixed = set(from_state.fixed)
+            self.free = dict((rule, set(permu_set)) for rule, permu_set in from_state.free.iteritems())
+            self.overlapping_rules = from_state.overlapping_rules
+            self.compatible_rule_index = from_state.compatible_rule_index
+            
+    def build_compatibility_index(self, ruleset):
+        index = {}
+        for rule, permu_set in ruleset.permu_map.iteritems():
+            for permu in permu_set:
+                for rule_ov in self.overlapping_rules(rule):
+                    index[(permu, rule_ov)] = set(ruleset.permu_map[rule_ov].compatible(permu))
+        return index
+
+    def is_complete(self):
+        return not self.free
+    
+    def iterate(self):
+        rule = self.active_rule()
+        for permu in self.free[rule]:
+            next_state = self.propogate(rule, permu)
+            if next_state is not None:
+                # if None, conflict detected; dead end
+                yield next_state
+
+    def active_rule(self):
+        return iter(self.free).next()
+
+    def propogate(self, rule, permu):
+        return EnumerationState(from_state=self)._propogate(rule, permu)
+
+    def _propogate(self, rule, permu):
+        self.fixed.add(permu)
+        del self.free[rule]
+
+        for related_rule in self.overlapping_rules(rule):
+            # must check this on each iteration to properly handle dependency cycles
+            if related_rule not in self.free:
+                continue
+
+            linked_permus = set(p for p in self.free[related_rule] if p in self.compatible_rule_index[(permu, related_rule)])
+            self.free[related_rule] = linked_permus
+
+            if len(linked_permus) == 0:
+                # conflict
+                return None
+            elif len(linked_permus) == 1:
+                # only one possiblity; constrain further
+                only_permu = iter(linked_permus).next()
+                return self._propogate(related_rule, only_permu)
+        return self
+
+    def mine_config(self):
+        return reduce(lambda a, b: a.combine(b), self.fixed)
+
+        
+
+
 
 def permute_and_interfere(rules):
     ruleset = PermutedRuleset(rules)
@@ -438,20 +530,7 @@ def permute_and_interfere(rules):
 
 
 
-def enumerate_front():
-    pass
-"""
 
-enumeration state is:
-[[permus]], position i
-all permus before i are determined
-
-if plist[i] has more than one option:
-    for each permu choice:
-        clone state
-        constraint p[i] to choice
-        propagate constraints to other plists
-"""
 
 def read_board(board, total_mines, include_all_mines=False, include_clears=False):
     #. = blank; * = mine; x = unknown; N = count
@@ -490,7 +569,7 @@ def read_board(board, total_mines, include_all_mines=False, include_clears=False
                 relevant_mines.update([nid for nid, nstate in neighbors.iteritems() if nstate == '*'])
     if include_clears:
         rules.append(mkrule(0, clears))
-    if not include_all_mines:
+    if not include_all_mines: #TODO fix
         rules.append(mkrule(len(relevant_mines), relevant_mines))
 
     return rules
