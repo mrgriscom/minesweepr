@@ -1,5 +1,6 @@
 import collections
 import itertools
+import operator
 
 class InconsistencyError(Exception):
     pass
@@ -58,6 +59,9 @@ class Rule_(object):
         return self.cells_.issubset(parent.cells_)
         # equivalent rules are subrules of each other
 
+    def is_trivial(self):
+        return len(self.cells_) == 1
+
     def __repr__(self):
         return 'Rule_(num_mines=%d, num_cells=%d, cells_=%s)' % (self.num_mines, self.num_cells,
             sorted([sorted(list(cell_)) for cell_ in self.cells_]))
@@ -75,17 +79,18 @@ def solve(rules, mine_prevalence):
     rules, _ = condense_supercells(rules)
     rules = reduce_rules(rules)
 
-    determined = set(r for r in rules if len(r.cells_) == 1)
+    determined = set(r for r in rules if r.is_trivial())
     rules -= determined
 
-    #debug
-    for rs in (determined, rules):
-        for r in rs:
-            print r
-            for p in sorted([str(px) for px in r.permute()]):
-                print p
+    ruleset = permute_and_interfere(rules)
+    fronts = ruleset.split_fronts()
 
-    permute_and_interfere(rules)
+    trivial_fronts = set(f for f in fronts if f.is_trivial())
+    determined |= set(f.trivial_rule() for f in trivial_fronts)
+    fronts -= trivial_fronts
+
+    print determined
+    print fronts
 
 def condense_supercells(rules):
     cell_rules_map = map_reduce(rules, lambda rule: [(cell, rule) for cell in rule.cells], set_)
@@ -141,7 +146,7 @@ class CellRulesMap(object):
             self.map[cell_].remove(rule)
 
     def overlapping_rules(self, rule):
-        return reduce(lambda a, b: a.union(b), (self.map[cell_] for cell_ in rule.cells_), set()) - set([rule])
+        return reduce(operator.or_, (self.map[cell_] for cell_ in rule.cells_), set()) - set([rule])
 
     def interference_edges(self):
         interferences = set()
@@ -149,6 +154,28 @@ class CellRulesMap(object):
             for rule_ov in self.overlapping_rules(rule):
                 interferences.add((rule, rule_ov))
         return interferences
+
+    def partition(self):
+        related_rules = dict((rule, self.overlapping_rules(rule)) for rule in self.rules)
+        partitions = set()
+        while related_rules:
+            start = related_rules.keys()[0]
+            partition = graph_traverse(related_rules, start)
+            partitions.add(partition)
+            for rule in partition:
+                del related_rules[rule]
+        return partitions
+            
+def graph_traverse(graph, node):
+    nodes = set()
+    _graph_traverse(graph, node, nodes)
+    return set_(nodes)
+
+def _graph_traverse(graph, node, visited):
+    visited.add(node)
+    for neighbor in graph[node]:
+        if neighbor not in visited:
+            _graph_traverse(graph, neighbor, visited)
 
 class RuleReducer(object):
     def __init__(self):
@@ -326,11 +353,11 @@ class PermutationSet(object):
     def __repr__(self):
         return str(list(self.permus))
 
-class RulePermutationMap(object):
-    def __init__(self, rules):
+class PermutedRuleset(object):
+    def __init__(self, rules, permu_map=None):
         self.rules = rules
         self.cell_rules_map = CellRulesMap(rules)
-        self.permu_map = dict((rule, PermutationSet.from_rule(rule)) for rule in rules)
+        self.permu_map = dict((rule, PermutationSet.from_rule(rule)) for rule in rules) if permu_map is None else permu_map
 
     def cross_eliminate(self):
         interferences = self.cell_rules_map.interference_edges()
@@ -385,12 +412,29 @@ class RulePermutationMap(object):
         self.cell_rules_map.add_rule(rule)
         self.permu_map[rule] = permu_set
 
-def permute_and_interfere(rules):
-    rule_permu_map = RulePermutationMap(rules)
-    rule_permu_map.cross_eliminate()
-    rule_permu_map.rereduce()
+    def filter(self, rule_subset):
+        return PermutedRuleset(rule_subset, dict((rule, self.permu_map[rule]) for rule in rule_subset))
 
-    print rule_permu_map.permu_map
+    def split_fronts(self):
+        return set(self.filter(rule_subset) for rule_subset in self.cell_rules_map.partition())
+
+    def is_trivial(self):
+        return len(self.rules) == 1
+
+    def trivial_rule(self):
+        singleton = iter(self.rules).next()
+        # postulate: any singleton rule must also be trivial
+        assert singleton.is_trivial()
+        return singleton
+
+        # transform it anyway just to be safe
+        #return Rule_(singleton.num_mines, set([reduce(operator.or_, singleton.cells_)]))
+
+def permute_and_interfere(rules):
+    ruleset = PermutedRuleset(rules)
+    ruleset.cross_eliminate()
+    ruleset.rereduce()
+    return ruleset
 
 
 
