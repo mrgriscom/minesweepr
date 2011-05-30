@@ -452,6 +452,12 @@ class PermutedRuleset(object):
         for mineconfig in _enumerate(EnumerationState(self)):
             yield mineconfig
 
+def permute_and_interfere(rules):
+    ruleset = PermutedRuleset(rules)
+    ruleset.cross_eliminate()
+    ruleset.rereduce()
+    return ruleset
+
 def _enumerate(enum_state):
     if enum_state.is_complete():
         yield enum_state.mine_config()
@@ -524,16 +530,6 @@ class EnumerationState(object):
 
     def mine_config(self):
         return reduce(lambda a, b: a.combine(b), self.fixed)
-
-        
-
-
-
-def permute_and_interfere(rules):
-    ruleset = PermutedRuleset(rules)
-    ruleset.cross_eliminate()
-    ruleset.rereduce()
-    return ruleset
 
 
 
