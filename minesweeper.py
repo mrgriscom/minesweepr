@@ -483,16 +483,19 @@ class EnumerationState(object):
     def iterate(self):
         rule = self.active_rule()
         for permu in self.free[rule]:
-            next_state = self.propogate(rule, permu)
-            if next_state is not None:
-                # if None, conflict detected; dead end
-                yield next_state
+            try:
+                yield self.propogate(rule, permu)
+            except ValueError:
+                # conflict detected; dead end
+                pass
 
     def active_rule(self):
         return iter(self.free).next()
 
     def propogate(self, rule, permu):
-        return EnumerationState(from_state=self)._propogate(rule, permu)
+        state = EnumerationState(from_state=self)
+        state._propogate(rule, permu)
+        return state
 
     def _propogate(self, rule, permu):
         self.fixed.add(permu)
@@ -508,12 +511,11 @@ class EnumerationState(object):
 
             if len(linked_permus) == 0:
                 # conflict
-                return None
+                raise ValueError()
             elif len(linked_permus) == 1:
                 # only one possiblity; constrain further
                 only_permu = iter(linked_permus).next()
-                return self._propogate(related_rule, only_permu)
-        return self
+                self._propogate(related_rule, only_permu)
 
     def mine_config(self):
         return reduce(lambda a, b: a.combine(b), self.fixed)
