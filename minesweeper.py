@@ -18,7 +18,7 @@ class Rule(object):
         self.cells = set_(cells)
 
     def condensed(self, rule_supercells_map):
-        return Rule_(self.num_mines, len(self.cells), rule_supercells_map[self])
+        return Rule_(self.num_mines, rule_supercells_map[self], len(self.cells))
 
     def __repr__(self):
         return 'Rule(num_mines=%d, cells=%s)' % (self.num_mines, sorted(list(self.cells)))
@@ -28,10 +28,10 @@ class Rule_(object):
     # num_cells: # of base cells in 'cells_'
     # cells: set of supercells; each supercell a set of base cells
     
-    def __init__(self, num_mines, num_cells, cells_):
+    def __init__(self, num_mines, cells_, num_cells=None):
         self.num_mines = num_mines
-        self.num_cells = num_cells
         self.cells_ = cells_
+        self.num_cells = num_cells if num_cells is not None else sum(len(cell_) for cell_ in cells_)
 
         if self.num_mines < 0 or self.num_mines > self.num_cells:
             raise InconsistencyError()
@@ -40,15 +40,15 @@ class Rule_(object):
         if self.num_mines == 0 or self.num_mines == self.num_cells:
             for cell_ in self.cells_:
                 size = len(cell_)
-                yield Rule_(size if self.num_mines > 0 else 0, size, set_([cell_]))
+                yield Rule_(size if self.num_mines > 0 else 0, set_([cell_]), size)
             # degenerate rules (no cells) disappear here
         else:
             yield self
 
     def subtract(self, subrule):
         return Rule_(self.num_mines - subrule.num_mines,
-                     self.num_cells - subrule.num_cells,
-                     self.cells_ - subrule.cells_)
+                     self.cells_ - subrule.cells_,
+                     self.num_cells - subrule.num_cells)
 
     def permute(self):
         for p in permute(self.num_mines, list(self.cells_)):
@@ -67,7 +67,7 @@ class Rule_(object):
         def listify(x):
             return x if hasattr(x, '__iter__') else [x]
         cells_ = [listify(cell_) for cell_ in cells_]
-        return Rule_(num_mines, sum(len(cell_) for cell_ in cells_), set_(set_(cell_) for cell_ in cells_))
+        return Rule_(num_mines, set_(set_(cell_) for cell_ in cells_))
 
 def solve(rules, mine_prevalence):
     # mine_prevalence is a MineCount or float (base probability that cell is mine)
@@ -250,71 +250,164 @@ def permute(count, cells, permu=None):
                 for p in permute(count - multiplicity, cells[1:], permu_add((cell, multiplicity))):
                     yield p
 
+class PermutationSet(object):
+    def __init__(self, cells_, k, permus):
+        self.cells_ = cells_
+        self.k = k
+        self.permus = permus
+        self.constrained = False
+
+    @staticmethod
+    def from_rule(rule):
+        return PermutationSet(rule.cells_, rule.num_mines, set(rule.permute()))
+
+    def to_rule(self):
+        return Rule_(self.k, self.cells_)
+
+    def __iter__(self):
+        return self.permus.__iter__()
+
+    def remove(self, permu):
+        self.permus.remove(permu)
+        self.constrained = True
+
+    def empty(self):
+        return not self.permus
+
+    def decompose(self):
+        return self._decompose() if self.constrained else [self]
+
+    def _decompose(self, k_floor=1):
+        """determine if the permutation set is the cartesian product of
+        N smaller permutation sets; return the decomposition if so
+
+        permus must be a subset of 'cells_ choose k' for some k
+        """
+        for _k in range(k_floor, int(.5 * len(self.cells_)) + 1):
+            for cell_subset in (set_(c) for c in itertools.combinations(self.cells_, _k)):
+                try:
+                    permu_subset, permu_remainder = self.split(cell_subset)
+                except ValueError:
+                    continue
+
+                # cartesian divisor!
+                divisors = [permu_subset]
+                divisors.extend(permu_remainder._decompose(_k))
+                return divisors
+
+        return [self]
+
+    def split(self, cell_subset):
+        cell_remainder = self.cells_ - cell_subset
+        permu_subset = set(p.subset(cell_subset) for p in self.permus)
+
+        k_sub = set(p.k() for p in permu_subset)
+        if len(k_sub) > 1:
+            # subset cannot be a cartesian divisor; k-values of sub-
+            # permutations differ, so impossible to originate from single
+            # 'choose' operation
+            raise ValueError()
+        k_sub = k_sub.pop()
+
+        # get the remaining permutation sets for each sub-permutation
+        permu_remainders = set(map_reduce(self.permus,
+            emitfunc=lambda p: [(p.subset(cell_subset), p)],
+            reducefunc=lambda pv: set_(p.subset(cell_remainder) for p in pv)
+        ).values())
+        if len(permu_remainders) > 1:
+            # remaining subsets are not identical for each sub-permutation; not
+            # a cartesian divisor
+            raise ValueError()
+        permu_remainders = permu_remainders.pop()
+
+        return (PermutationSet(cell_subset, k_sub, permu_subset),
+                PermutationSet(cell_remainder, self.k - k_sub, permu_remainders))
+
+    def __repr__(self):
+        return str(list(self.permus))
+
 class RulePermutationMap(object):
-    pass
+    def __init__(self, rules):
+        self.rules = rules
+        self.cell_rules_map = CellRulesMap(rules)
+        self.permu_map = dict((rule, PermutationSet.from_rule(rule)) for rule in rules)
+
+    def cross_eliminate(self):
+        interferences = self.cell_rules_map.interference_edges()
+        while interferences:
+            r, r_ov = interferences.pop()
+            changed = False
+            for permu in list(self.permu_map[r]): #copy iterable so we can modify original
+                if not any(permu.compatible(permu_ov) for permu_ov in self.permu_map[r_ov]):
+                    # this permutation has no compatible permutation in the overlapping
+                    # rule. thus, it can never occur
+                    self.permu_map[r].remove(permu)
+                    changed = True
+            if self.permu_map[r].empty():
+                # no possible configurations for this rule remain
+                raise InconsistencyError()
+            elif changed:
+                # other rules overlapping with this one must be recalculated
+                for r_other in self.cell_rules_map.overlapping_rules(r):
+                    interferences.add((r_other, r))
+
+    def rereduce(self):
+        # postulates that i'm pretty certain about, but can't quite prove
+        # *) among all cartesian decompositions from all rules, none will be reduceable with another
+        #    (decomp'ed rules may have duplicates, though)
+        # *) cartesian decomposition will have effectively re-reduced all rules in the set, even non-
+        #    decomp'ed rules; there will be no possible reductions between a decomp'ed rule and an
+        #    original rule
+        # *) re-permuting amongst the de-comped ruleset will produce the same permutation sets
+
+        superseded_rules = set()
+        decompositions = {}
+        for rule, permu_set in self.permu_map.iteritems():
+            decomp = permu_set.decompose()
+            if len(decomp) > 1:
+                superseded_rules.add(rule)
+                # collapse duplicate decompositions by keying by cell set
+                decompositions.update((dc.cells_, dc) for dc in decomp)
+
+        for rule in superseded_rules:
+            self.remove_rule(rule)
+        for permu_set in decompositions.values():
+            self.add_permu_set(permu_set)
+
+    def remove_rule(self, rule):
+        self.rules.remove(rule)
+        self.cell_rules_map.remove_rule(rule)
+        del self.permu_map[rule]
+
+    def add_permu_set(self, permu_set):
+        rule = permu_set.to_rule()
+        self.rules.add(rule)
+        self.cell_rules_map.add_rule(rule)
+        self.permu_map[rule] = permu_set
 
 def permute_and_interfere(rules):
-    cell_rules_map = CellRulesMap(rules)
-    permumap = dict((rule, list(rule.permute())) for rule in rules)
-    
-    cross_eliminate(cell_rules_map, permumap)
+    rule_permu_map = RulePermutationMap(rules)
+    rule_permu_map.cross_eliminate()
+    rule_permu_map.rereduce()
 
-    print permumap
-
-def cross_eliminate(cell_rules_map, permumap):
-    interferences = cell_rules_map.interference_edges()
-    while interferences:
-        r, r_ov = interferences.pop()
-        changed = False
-        for permu in permumap[r]:
-            if not any(permu.compatible(permu_ov) for permu_ov in permumap[r_ov]):
-                # this permutation has no compatible permutation in the overlapping
-                # rule. thus, it can never occur
-                permumap[r].remove(permu)
-                changed = True
-        if not permumap[r]:
-            # no possible configurations for this rule remain
-            raise InconsistencyError()
-        elif changed:
-            # other rules overlapping with this one must be recalculated
-            for r_other in cell_rules_map.overlapping_rules(r):
-                interferences.add((r_other, r))
-
-def decompose_permutations(cells_, permus, k_floor=1):
-    """determine if the permutation set is the cartesian product of
-    N smaller permutation sets; return the decomposition if so
-
-    permus must be a subset of 'cells_ choose k' for some k
-    """
-    for k in range(k_floor, int(.5 * len(cells_)) + 1):
-        for cell_subset in (set_(c) for c in itertools.combinations(cells_, k)):
-            cell_remainder = cells_ - cell_subset
-            permu_subset = set(p.subset(cell_subset) for p in permus)
-
-            sub_k = set(p.k() for p in permu_subset)
-            if len(sub_k) > 1:
-                # subset cannot be a cartesian divisor; k-values of sub-
-                # permutations differ, so impossible to originate from single
-                # 'choose' operation
-                continue
-
-            # get the remaining permutation sets for each sub-permutation
-            permu_remainders = set(map_reduce(permus,
-                emitfunc=lambda p: [(p.subset(cell_subset), p)],
-                reducefunc=lambda pv: set_(p.subset(cell_remainder) for p in pv)
-            ).values())
-            if len(permu_remainders) > 1:
-                # remaining subsets are not identical for each sub-permutation; not
-                # a cartesian divisor
-                continue
-
-            # cartesian divisor!
-            return set_([cell_subset]) | decompose_permutations(cell_remainder, permu_remainders.pop(), k)
-
-    return set_([cells_])
+    print rule_permu_map.permu_map
 
 
 
+def enumerate_front():
+    pass
+"""
+
+enumeration state is:
+[[permus]], position i
+all permus before i are determined
+
+if plist[i] has more than one option:
+    for each permu choice:
+        clone state
+        constraint p[i] to choice
+        propagate constraints to other plists
+"""
 
 def read_board(board, total_mines, include_all_mines=False, include_clears=False):
     #. = blank; * = mine; x = unknown; N = count
