@@ -443,7 +443,7 @@ class PermutedRuleset(object):
         return len(self.rules) == 1
 
     def trivial_rule(self):
-        singleton = iter(self.rules).next()
+        singleton = _0(self.rules)
         # postulate: any singleton rule must also be trivial
         assert singleton.is_trivial()
         return singleton
@@ -462,7 +462,7 @@ def _enumerate(enum_state):
     if enum_state.is_complete():
         yield enum_state.mine_config()
     else:
-        for next_state in enum_state.iterate():
+        for next_state in enum_state:
             for mineconfig in _enumerate(next_state):
                 yield mineconfig
 
@@ -491,17 +491,14 @@ class EnumerationState(object):
     def is_complete(self):
         return not self.free
     
-    def iterate(self):
-        rule = self.active_rule()
+    def __iter__(self):
+        rule = _0(self.free)
         for permu in self.free[rule]:
             try:
                 yield self.propogate(rule, permu)
             except ValueError:
                 # conflict detected; dead end
                 pass
-
-    def active_rule(self):
-        return iter(self.free).next()
 
     def propogate(self, rule, permu):
         state = EnumerationState(from_state=self)
@@ -525,8 +522,7 @@ class EnumerationState(object):
                 raise ValueError()
             elif len(linked_permus) == 1:
                 # only one possiblity; constrain further
-                only_permu = iter(linked_permus).next()
-                self._propogate(related_rule, only_permu)
+                self._propogate(related_rule, _0(linked_permus))
 
     def mine_config(self):
         return reduce(lambda a, b: a.combine(b), self.fixed)
@@ -578,6 +574,9 @@ def read_board(board, total_mines, include_all_mines=False, include_clears=False
     return rules
 
 set_ = frozenset
+
+def _0(iterable):
+    return iter(iterable).next()
 
 def map_reduce(data, emitfunc=lambda rec: [(rec,)], reducefunc=lambda v: v):
     """perform a "map-reduce" on the data
