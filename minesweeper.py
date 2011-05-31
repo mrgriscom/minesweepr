@@ -1,6 +1,7 @@
 import collections
 import itertools
 import operator
+import math
 
 class InconsistencyError(Exception):
     pass
@@ -13,7 +14,7 @@ MineCount = collections.namedtuple('MineCount', ['total_cells', 'total_mines'])
 def solve(rules, mine_prevalence):
     # mine_prevalence is a MineCount or float (base probability that cell is mine)
 
-    rules, _ = condense_supercells(rules)
+    rules, all_cells = condense_supercells(rules)
     rules = reduce_rules(rules)
 
     determined = set(r for r in rules if r.is_trivial())
@@ -26,11 +27,9 @@ def solve(rules, mine_prevalence):
     determined |= set(f.trivial_rule() for f in trivial_fronts)
     fronts -= trivial_fronts
 
-    print determined
-    print [f.cells_ for f in fronts]
-
-    for f in fronts:
-        print list(f.enumerate())
+    stats = [enumerate_front(f) for f in fronts]
+    stats.extend(r.to_stat() for r in determined)
+    cell_probabilities(stats, mine_prevalence, all_cells)
 
 class Rule(object):
     # num_mines: # of mines contained in 'cells'
@@ -87,6 +86,15 @@ class Rule_(object):
 
     def is_trivial(self):
         return len(self.cells_) == 1
+
+    def to_stat(self):
+        if not self.is_trivial():
+            raise ValueError()
+
+        tally = FrontTally()
+        tally.total = choose(self.num_cells, self.num_mines)
+        tally.tally = {_0(self.cells_): self.num_mines}
+        return {self.num_mines: tally}
 
     def __repr__(self):
         return 'Rule_(num_mines=%d, num_cells=%d, cells_=%s)' % (self.num_mines, self.num_cells,
@@ -260,6 +268,9 @@ class Permutation(object):
 
     def k(self):
         return sum(self.mapping.values())
+
+    def multiplicity(self):
+        return reduce(operator.mul, (choose(len(cell_), k) for cell_, k in self.mapping.iteritems()))
 
     def __eq__(self, x):
         return self.__dict__ == x.__dict__
@@ -527,53 +538,158 @@ class EnumerationState(object):
     def mine_config(self):
         return reduce(lambda a, b: a.combine(b), self.fixed)
 
+class FrontTally(object):
+    def __init__(self):
+        self.total = 0
+        self.tally = collections.defaultdict(lambda: 0)
 
+    def add(self, config):
+        mult = config.multiplicity()
+        self.total += mult
+        for cell_, n in config.mapping.iteritems():
+            self.tally[cell_] += n * mult
 
+    def finalize(self):
+        self.tally = dict((cell_, n / float(self.total)) for cell_, n in self.tally.iteritems())
 
+    def __repr__(self):
+        return str((self.total, self.tally))
 
-def read_board(board, total_mines, include_all_mines=False, include_clears=False):
-    #. = blank; * = mine; x = unknown; N = count
-    lines = [ln.strip() for ln in board.strip().split('\n')]
-    height = len(lines)
-    width = len(lines[0])
+def enumerate_front(front):
+    tally = collections.defaultdict(lambda: FrontTally())
 
-    def adjacent((row, col)):
-        for r in range(max(row - 1, 1), min(row + 2, height + 1)):
-            for c in range(max(col - 1, 1), min(col + 2, width + 1)):
-                if (r, c) != (row, col):
-                    yield (r, c)
+    for config in front.enumerate():
+        num_mines = config.k()
+        subtally = tally[num_mines]
+        subtally.add(config)
 
-    cells = {}
-    for row, ln in enumerate(lines):
-        for col, c in enumerate(ln):
-            cells[(row + 1, col + 1)] = c
+    if not tally:
+        # front has no possible configurations
+        raise InconsistencyError()
+
+    for subtally in tally.values():
+        subtally.finalize()
+    return tally
+
+def cell_probabilities(stats, mine_prevalence, all_cells):
+    discrete_mode = isinstance(mine_prevalence, MineCount)
+
+    if discrete_mode:
+        min_possible_mines, max_possible_mines = (sum(f(st.keys()) for st in stats) for f in (min, max))
+        num_uncharted_cells = mine_prevalence.total_cells - sum(len(cell_) for cell_ in all_cells)
+        #print min_possible_mines, max_possible_mines, num_uncharted_cells
+
+        if min_possible_mines > mine_prevalence.total_mines:
+            # min # of permuted mines is more than the total # of mines available
+            raise InconsistencyError()
+        if mine_prevalence.total_mines > max_possible_mines + num_uncharted_cells:
+            # the max # of mines that can fit on the board is less than the total # specified
+            raise InconsistencyError()
+
+"""
+    if total mines limited:
+        sum min #mines for all fronts
+        if > total #:
+          inconsistent
+
+    pass
+"""
+
+def read_board(encoded_board, total_mines, everything_mode=False):
+    board = Board(encoded_board)
+    return generate_rules(board, total_mines, everything_mode)
+
+class Board(object):
+    def __init__(self, encoded):
+        #. = blank; * = mine; x = unknown; N = count
+        lines = [ln.strip() for ln in encoded.strip().split('\n')]
+        self.height = len(lines)
+        self.width = len(lines[0])
+
+        self.cells = {}
+        for row, ln in enumerate(lines):
+            for col, c in enumerate(ln):
+                pos = (row + 1, col + 1)
+                self.cells[pos] = BoardCell(c, self.cell_name(*pos))
+
+    def adjacent(self, (row, col)):
+        for r in range(max(row - 1, 1), min(row + 2, self.height + 1)):
+            for c in range(max(col - 1, 1), min(col + 2, self.width + 1)):
+                pos = (r, c)
+                if pos != (row, col):
+                    yield (pos, self.cells[pos])
+
+    def cell_name(self, r, c):
+        return '%0*d-%0*d' % (len(str(self.height)), r, len(str(self.width)), c)
+
+    def total_cells(self):
+        return self.width * self.height
+
+class BoardCell(object):
+    def __init__(self, c, name):
+        self.name = name
+
+        if c == '.':
+            c = '0'
+
+        try:
+            self.type = 'clear'
+            self.adj = int(c)
+        except ValueError:
+            self.type = {'*': 'mine', 'x': 'unkn'}[c]
+
+    def is_mine(self):
+        return self.type == 'mine'
+
+    def is_unknown(self):
+        return self.type == 'unkn'
+
+def generate_rules(board, total_mines, everything_mode):
+    rules = []
+    clear_cells = set()
+    zero_cells = set()
+    relevant_mines = set()
+    num_known_mines = 0
 
     def mkrule(mines, cells):
-        return Rule(mines, ['%d-%d' % cell for cell in cells])
+        return Rule(mines, [cell.name for cell in cells])
 
-    rules = []
-    clears = []
-    relevant_mines = set()
-    for cell_id, state in cells.iteritems():
-        if state == '*':
-            if include_all_mines:
-                rules.append(mkrule(1, [cell_id]))
-        elif state in '.':
-            clears.append(cell_id)
-        elif state in '12345678':
-            clears.append(cell_id)
-            neighbors = dict((nid, cells[nid]) for nid in adjacent(cell_id))
-            if 'x' in neighbors.values():
-                rules.append(mkrule(int(state), [nid for nid, nstate in neighbors.iteritems() if nstate in ('x', '*')]))
-                relevant_mines.update([nid for nid, nstate in neighbors.iteritems() if nstate == '*'])
-    if include_clears:
-        rules.append(mkrule(0, clears))
-    if not include_all_mines: #TODO fix
-        rules.append(mkrule(len(relevant_mines), relevant_mines))
+    for cell_id, cell in board.cells.iteritems():
+        if cell.is_mine():
+            num_known_mines += 1
+            if everything_mode:
+                relevant_mines.add(cell)
+        elif not cell.is_unknown():
+            clear_cells.add(cell)
+            neighbors = dict(board.adjacent(cell_id)).values()
+            if cell.adj > 0:
+                if any(nc.is_unknown() for nc in neighbors) or everything_mode:
+                    rules.append(mkrule(cell.adj, [nc for nc in neighbors if nc.is_mine() or nc.is_unknown()]))
+                    relevant_mines.update(nc for nc in neighbors if nc.is_mine())
+            else:
+                zero_cells.update(neighbors)
 
-    return rules
+    rules.append(mkrule(len(relevant_mines), relevant_mines))
+    if everything_mode:
+        rules.append(mkrule(0, clear_cells))
+        rules.append(mkrule(0, zero_cells))
+
+    num_irrelevant_mines = num_known_mines - len(relevant_mines)
+    return (rules, MineCount(board.total_cells() - (0 if everything_mode else len(clear_cells) + num_irrelevant_mines),
+                             total_mines - (0 if everything_mode else num_irrelevant_mines)))
 
 set_ = frozenset
+
+def fact_div(a, b):
+    """return a!/b!, a > b"""
+    return reduce(operator.mul, xrange(b + 1, a + 1), 1)
+
+def choose(n, k):
+    if n == 1:
+        # optimize by far most-common case
+        return 1
+
+    return fact_div(n, max(k, n - k)) / math.factorial(min(k, n - k))
 
 def _0(iterable):
     return iter(iterable).next()
