@@ -194,6 +194,21 @@ MINE_RADIUS = .5;
 FONT_SIZE = .5;
 FONT_OFFSET = .1;
 
+EPSILON = 1.0e-6;
+
+function prob_shade (p) {
+  if (p < EPSILON) {
+    return 'rgba(0, 0, 255, .2)';
+  } else if (p > 1 - EPSILON) {
+    return 'rgba(255, 0, 0, .2)';
+  } else {
+    var MIN_ALPHA = .05;
+    var MAX_ALPHA = .8;
+    var alpha = MIN_ALPHA * (1 - p) + MAX_ALPHA * p;
+    return 'rgba(0, 255, 0, ' + alpha + ')';
+  }
+}
+
 function pad(i, n) {
   var s = '' + i;
   while (s.length < n) {

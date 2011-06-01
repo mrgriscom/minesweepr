@@ -20,20 +20,19 @@ function stuff () {
   x.render(canvas);
   for (var i = 0; i < 4; i++) {
     for (var j = 0; j < 3; j++) {
-      x.render_overlay(4+j, 6+i, 'rgba(0,0,255,.2)', canvas);
+      x.render_overlay(4+j, 6+i, prob_shade(0.), canvas);
     }
   }
   for (var i = 0; i < 4; i++) {
     for (var j = 0; j < 3; j++) {
-      x.render_overlay(4+j, 13+i, 'rgba(255,0,0,.2)', canvas);
+      x.render_overlay(4+j, 13+i, prob_shade(1.), canvas);
     }
   }
-  var k = .03;
+  var k = .0001;
   for (var i = 0; i < 4; i++) {
     for (var j = 0; j < 3; j++) {
-//      x.render_overlay(9+j, 6+i, 'rgba(0,' + Math.round(255*k) + ',0,.2)', canvas);
-      x.render_overlay(9+j, 6+i, 'rgba(0,255,0,' + (.1 + .7 * k) + ')', canvas);
-      k += .97 / 11;
+      x.render_overlay(9+2*j, 6+2*i, prob_shade(k), canvas);
+      k += .9998 / 11;
     }
   }
 }
