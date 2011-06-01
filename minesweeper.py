@@ -63,7 +63,7 @@ class Rule_(object):
         self.num_cells = num_cells if num_cells is not None else sum(len(cell_) for cell_ in cells_)
 
         if self.num_mines < 0 or self.num_mines > self.num_cells:
-            raise InconsistencyError()
+            raise InconsistencyError('rule with negative mines / more mines than cells')
 
     def decompose(self):
         if self.num_mines == 0 or self.num_mines == self.num_cells:
@@ -401,7 +401,7 @@ class PermutedRuleset(object):
                     changed = True
             if self.permu_map[r].empty():
                 # no possible configurations for this rule remain
-                raise InconsistencyError()
+                raise InconsistencyError('rule is constrained such that it has no valid mine permutations')
             elif changed:
                 # other rules overlapping with this one must be recalculated
                 for r_other in self.cell_rules_map.overlapping_rules(r):
@@ -545,7 +545,7 @@ class FrontTally(object):
 
         if not self.subtallies:
             # front has no possible configurations
-            raise InconsistencyError()
+            raise InconsistencyError('mine front has no possible configurations')
 
         self.finalize()
 
@@ -648,11 +648,10 @@ def check_count_consistency(stats, mine_prevalence, all_cells):
     num_uncharted_cells = mine_prevalence.total_cells - sum(len(cell_) for cell_ in all_cells)
 
     if min_possible_mines > mine_prevalence.total_mines:
-        # min # of permuted mines is more than the total # of mines available
-        raise InconsistencyError()
+        raise InconsistencyError('minimum possible number of mines is more than supplied mine count')
     if mine_prevalence.total_mines > max_possible_mines + num_uncharted_cells:
         # the max # of mines that can fit on the board is less than the total # specified
-        raise InconsistencyError()
+        raise InconsistencyError('maximum possible number of mines on board is less than supplied mine count')
 
     return num_uncharted_cells
 
@@ -691,14 +690,14 @@ def nondiscrete_relative_likelihood(p, k, k0):
     """given binomial probability (p,k,n) => p^k*(1-p)^(n-k),
     return binom_prob(p,k,n) / binom_prob(p,k0,n)"""
     if p < 0. or p > 1.:
-        raise ValueError()
+        raise ValueError('p must be [0., 1.]')
 
     return float((p / (1 - p))**(k - k0))
 
 def discrete_relative_likelihood(n, k, k0):
     """return 'n choose k' / 'n choose k0'"""
     if any(x < 0 or x > n for x in (k, k0)):
-        raise ValueError()
+        raise ValueError('k, k0 must be [0, n]')
 
     return float(fact_div(k0, k) * fact_div(n - k0, n - k))
 
