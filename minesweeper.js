@@ -20,11 +20,12 @@ function Board (width, height) {
 
   this.init = function (mine_dist) {
     for (var i = 0; i < mine_dist.length; i++) {
-      this.cells.push(new Cell('', mine_dist[i] ? 'mine' : null, false, false));
+      this.cells.push(new Cell(null, mine_dist[i] ? 'mine' : null, false, false));
     }
     for (var r = 0; r < this.height; r++) {
       for (var c = 0; c < this.width; c++) {
         var cell = this.get_cell(r, c);
+        cell.name = this.cell_name(r, c);
         if (cell.state != 'mine') {
           var count = 0;
           var neighb = this.neighbors(r, c);
@@ -106,17 +107,48 @@ function Board (width, height) {
     return m;
   }
 
+  this.cell_name = function (r, c) {
+    var pad_to = function (i, max) { return pad(i, ('' + max).length); };
+    return pad_to(r, this.height) + '-' + pad_to(c, this.width);
+  }
+
+  this.safe_cell = function () {
+    var c = [];
+    for (var r = 0; r < this.height; r++) {
+      for (var c = 0; c < this.width; c++) {
+        var cell = this.get_cell(r, c);
+        if (cell.state != 'mine') {
+          c.push([r, c]);
+        }
+      }
+    }
+    return c[Math.floor(Math.random() * c.length)];
+  }
+
+  this.cell_dim = function (canvas) {
+    return Math.min(canvas.height / this.height, canvas.width / this.width);
+  }
+
   this.render = function (canvas, params) {
     params = params || {};
 
-    var ctx = canvas.getContext('2d');
-    var dim = Math.min(canvas.height / this.height, canvas.width / this.width);
-
     for (var r = 0; r < this.height; r++) {
       for (var c = 0; c < this.width; c++) {
-        this.get_cell(r, c).render(r, c, dim, ctx, params);
+        this.get_cell(r, c).render(this.geom(r, c, canvas), canvas.getContext('2d'), params);
       }
     }
+  }
+
+  this.render_overlay = function(r, c, fill, canvas) {
+    this.get_cell(r, c).render_overlay(this.geom(r, c, canvas), fill, canvas.getContext('2d'));
+  }
+
+  this.geom = function (r, c, canvas) {
+    var dim = this.cell_dim(canvas);
+    var cell_width = dim - MARGIN;
+    var corner = [c * dim, r * dim];
+    var center = [corner[0] + .5 * cell_width, corner[1] + .5 * cell_width];
+    return {span: cell_width, corner: corner, center: center};
   }
 }
 
@@ -126,39 +158,48 @@ function Cell (name, state, visible, flagged) {
   this.visible = visible;
   this.flagged = flagged;
 
-  this.render = function (r, c, dim, ctx, params) {
-    var cell_width = dim - MARGIN;
-    var corner = [c * dim, r * dim];
-    var center = [corner[0] + .5 * cell_width, corner[1] + .5 * cell_width];
-
+  this.render = function (g, ctx, params) {
     ctx.fillStyle = (this.visible ? VISIBLE_BG : HIDDEN_BG);
-    ctx.fillRect(corner[0], corner[1], cell_width, cell_width);
+    ctx.fillRect(g.corner[0], g.corner[1], g.span, g.span);
 
     if (this.state == 'mine') {
-      ctx.fillStyle = MINE_FILL;
+      ctx.fillStyle = (this.visible ? EXPLODED : MINE_FILL);
       ctx.beginPath();
-      ctx.arc(center[0], center[1], .5 * cell_width * MINE_RADIUS, 0, 2*Math.PI, false);
+      ctx.arc(g.center[0], g.center[1], .5 * g.span * MINE_RADIUS, 0, 2*Math.PI, false);
       if (this.flagged) {
         ctx.stroke();
       } else {
         ctx.fill();
       }
     } else if (this.state > 0 && this.visible) {
-      var font_size = dim * FONT_SIZE;
+      var font_size = g.span * FONT_SIZE;
       ctx.fillStyle = COUNT_FILL[Math.min(this.state - 1, COUNT_FILL.length - 1)];
       ctx.font = font_size + 'pt sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('' + this.state, center[0], center[1] + font_size * FONT_OFFSET);
+      ctx.fillText('' + this.state, g.center[0], g.center[1] + font_size * FONT_OFFSET);
     }
+  }
+
+  this.render_overlay = function (g, fill, ctx) {
+    ctx.fillStyle = fill;
+    ctx.fillRect(g.corner[0], g.corner[1], g.span, g.span);
   }
 }
 
 HIDDEN_BG = 'rgb(200, 200, 200)';
 VISIBLE_BG = 'rgb(230, 230, 230)';
 MINE_FILL = 'rgba(0, 0, 0, .5)';
+EXPLODED = 'rgba(255, 0, 0, .8)';
 COUNT_FILL = ['blue', 'green', 'red', 'purple', 'brown', 'cyan', 'orange', 'black'];
 MARGIN = 1;
 MINE_RADIUS = .5;
 FONT_SIZE = .5;
 FONT_OFFSET = .1;
+
+function pad(i, n) {
+  var s = '' + i;
+  while (s.length < n) {
+    s = '0' + s;
+  }
+}
