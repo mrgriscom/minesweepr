@@ -536,8 +536,8 @@ class EnumerationState(object):
         return reduce(lambda a, b: a.combine(b), self.fixed)
 
 class FrontTally(object):
-    def __init__(self):
-        self.subtallies = collections.defaultdict(FrontSubtally)
+    def __init__(self, data=None):
+        self.subtallies = collections.defaultdict(FrontSubtally) if data is None else data
 
     def tally(self, front):
         for config in front.enumerate():
@@ -579,14 +579,12 @@ class FrontTally(object):
         if not rule.is_trivial():
             raise ValueError()
 
-        subtally = FrontSubtally()
-        subtally.total = choose(rule.num_cells, rule.num_mines)
-        subtally.tally = {_0(rule.cells_): rule.num_mines}
-        # already finalized
+        return FrontTally({rule.num_mines: FrontSubtally.mk(choose(rule.num_cells, rule.num_mines), {_0(rule.cells_): rule.num_mines})})
 
-        tally = FrontTally()
-        tally.subtallies[rule.num_mines] = subtally
-        return tally
+    @staticmethod
+    def for_other(num_uncharted_cells, mine_totals):
+        metacell = UnchartedCell(num_uncharted_cells)
+        return FrontTally(dict((num_mines, FrontSubtally.mk(k, {metacell: num_mines})) for num_mines, k in mine_totals.iteritems()))
 
     def __repr__(self):
         return str(dict(self.subtallies))
@@ -609,6 +607,14 @@ class FrontSubtally(object):
         for cell_, expected_mines in self.tally.iteritems():
             yield (cell_, self.total * expected_mines)
 
+    @staticmethod
+    def mk(total, tally):
+        # tally must be pre-finalized
+        o = FrontSubtally()
+        o.total = total
+        o.tally = tally
+        return o
+
     def __repr__(self):
         return str((self.total, dict(self.tally)))
 
@@ -623,14 +629,15 @@ def cell_probabilities(stats, mine_prevalence, all_cells):
     if discrete_mode:
         num_uncharted_cells = check_count_consistency(stats, mine_prevalence, all_cells)
 
-    dynamic_stats = set(st for st in stats if not st.is_static())
+    dyn_stats = set(st for st in stats if not st.is_static())
     if discrete_mode:
-        num_static_mines = sum(st.max_mines() for st in stats - dynamic_stats)
+        num_static_mines = sum(st.max_mines() for st in stats - dyn_stats)
         at_large_mines = mine_prevalence.total_mines - num_static_mines
 
-        # dont forget 'other' probability
+        other_stat = combine_fronts(dyn_stats, num_uncharted_cells, at_large_mines)
+        stats.add(other_stat)
     else:
-        for st in stats:
+        for st in dyn_stats:
             for num_mines, subtally in st:
                 subtally.total *= nondiscrete_relative_likelihood(mine_prevalence, num_mines, st.min_mines())
 
@@ -649,19 +656,71 @@ def check_count_consistency(stats, mine_prevalence, all_cells):
 
     return num_uncharted_cells
 
+def combine_fronts(stats, num_uncharted_cells, at_large_mines):
+    Subtally = collections.namedtuple('Subtally', ['num_mines', 'count'])
+
+    def combo(cross_entry):
+        return tuple(Subtally(num_mines, subtally.total) for num_mines, subtally in cross_entry)
+
+    min_possible_mines = sum(st.min_mines() for st in stats)
+    max_free_mines = min(max(at_large_mines - min_possible_mines, 0), num_uncharted_cells)
+    grand_totals = [collections.defaultdict(lambda: 0) for st in stats]
+    uncharted_total = collections.defaultdict(lambda: 0)
+    stats = list(stats) # we need guaranteed iteration order
+
+    for combination in (combo(e) for e in itertools.product(*stats)):
+        num_free_mines = at_large_mines - sum(s.num_mines for s in combination)
+
+        if num_free_mines < 0 or num_free_mines > num_uncharted_cells:
+            k = 0.
+        else:
+            free_factor = discrete_relative_likelihood(num_uncharted_cells, num_free_mines, max_free_mines)
+            k = free_factor * reduce(operator.mul, (s.count for s in combination))
+        
+        for front_total, e in zip(grand_totals, combination):
+            front_total[e.num_mines] += k
+        uncharted_total[num_free_mines] += k
+
+    for st, front_total in zip(stats, grand_totals):
+        for num_mines, subtally in st:
+            subtally.total = front_total[num_mines]
+
+    return FrontTally.for_other(num_uncharted_cells, uncharted_total)
+
 def nondiscrete_relative_likelihood(p, k, k0):
     """given binomial probability (p,k,n) => p^k*(1-p)^(n-k),
     return binom_prob(p,k,n) / binom_prob(p,k0,n)"""
-    return (p / (1 - p))**(k - k0)
+    if p < 0. or p > 1.:
+        raise ValueError()
+
+    return float((p / (1 - p))**(k - k0))
 
 def discrete_relative_likelihood(n, k, k0):
     """return 'n choose k' / 'n choose k0'"""
-    return fact_div(k0, k) * fact_div(n - k0, n - k)
+    if any(x < 0 or x > n for x in (k, k0)):
+        raise ValueError()
+
+    return float(fact_div(k0, k) * fact_div(n - k0, n - k))
+
+class UnchartedCell(object):
+    UNCHARTED_TAG = ''
+
+    def __init__(self, size):
+        self.size = size
+
+    def __len__(self):
+        return self.size
+
+    def __iter__(self):
+        if self.size > 0:
+            yield self.UNCHARTED_TAG
 
 def expand_cells(cell_probs):
     for cell_, p in cell_probs:
         for cell in cell_:
             yield (cell, p / len(cell_))
+
+
 
 
 
