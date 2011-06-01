@@ -267,7 +267,7 @@ class Permutation(object):
         return sum(self.mapping.values())
 
     def multiplicity(self):
-        return reduce(operator.mul, (choose(len(cell_), k) for cell_, k in self.mapping.iteritems()))
+        return product(choose(len(cell_), k) for cell_, k in self.mapping.iteritems())
 
     def __eq__(self, x):
         return self.__dict__ == x.__dict__
@@ -674,7 +674,7 @@ def combine_fronts(stats, num_uncharted_cells, at_large_mines):
             k = 0.
         else:
             free_factor = discrete_relative_likelihood(num_uncharted_cells, num_free_mines, max_free_mines)
-            k = free_factor * reduce(operator.mul, (s.count for s in combination), 1)
+            k = free_factor * product(s.count for s in combination)
         
         for front_total, e in zip(grand_totals, combination):
             front_total[e.num_mines] += k
@@ -687,7 +687,7 @@ def combine_fronts(stats, num_uncharted_cells, at_large_mines):
     return FrontTally.for_other(num_uncharted_cells, uncharted_total)
 
 def possible_mine_limits(stats):
-    return  (sum(n) for n in zip(*((st.min_mines(), st.max_mines()) for st in stats))) if stats else (0, 0)
+    return (sum(f(st) for st in stats) for f in (lambda st: st.min_mines(), lambda st: st.max_mines()))
 
 def nondiscrete_relative_likelihood(p, k, k0):
     """given binomial probability (p,k,n) => p^k*(1-p)^(n-k),
@@ -817,10 +817,7 @@ set_ = frozenset
 
 def fact_div(a, b):
     """return a!/b!"""
-    if a >= b:
-        return reduce(operator.mul, xrange(b + 1, a + 1), 1)
-    else:
-        return reduce(operator.div, xrange(a + 1, b + 1), 1.)
+    return product(xrange(b + 1, a + 1)) if a >= b else 1. / fact_div(b, a)
 
 def choose(n, k):
     if n == 1:
@@ -831,6 +828,9 @@ def choose(n, k):
 
 def _0(iterable):
     return iter(iterable).next()
+
+def product(n):
+    return reduce(operator.mul, n, 1)
 
 def map_reduce(data, emitfunc=lambda rec: [(rec,)], reducefunc=lambda v: v):
     """perform a "map-reduce" on the data
