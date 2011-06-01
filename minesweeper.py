@@ -644,7 +644,7 @@ def cell_probabilities(stats, mine_prevalence, all_cells):
     return itertools.chain(*(st.collapse().iteritems() for st in stats))
 
 def check_count_consistency(stats, mine_prevalence, all_cells):
-    min_possible_mines, max_possible_mines = (sum(n) for n in zip(*((st.min_mines(), st.max_mines()) for st in stats)))
+    min_possible_mines, max_possible_mines = possible_mine_limits(stats)
     num_uncharted_cells = mine_prevalence.total_cells - sum(len(cell_) for cell_ in all_cells)
 
     if min_possible_mines > mine_prevalence.total_mines:
@@ -661,7 +661,7 @@ def combine_fronts(stats, num_uncharted_cells, at_large_mines):
     def combo(cross_entry):
         return tuple(Subtally(num_mines, subtally.total) for num_mines, subtally in cross_entry)
 
-    min_possible_mines = sum(st.min_mines() for st in stats)
+    min_possible_mines, _ = possible_mine_limits(stats)
     max_free_mines = min(max(at_large_mines - min_possible_mines, 0), num_uncharted_cells)
     grand_totals = [collections.defaultdict(lambda: 0) for st in stats]
     uncharted_total = collections.defaultdict(lambda: 0)
@@ -674,7 +674,7 @@ def combine_fronts(stats, num_uncharted_cells, at_large_mines):
             k = 0.
         else:
             free_factor = discrete_relative_likelihood(num_uncharted_cells, num_free_mines, max_free_mines)
-            k = free_factor * reduce(operator.mul, (s.count for s in combination))
+            k = free_factor * reduce(operator.mul, (s.count for s in combination), 1)
         
         for front_total, e in zip(grand_totals, combination):
             front_total[e.num_mines] += k
@@ -685,6 +685,9 @@ def combine_fronts(stats, num_uncharted_cells, at_large_mines):
             subtally.total = front_total[num_mines]
 
     return FrontTally.for_other(num_uncharted_cells, uncharted_total)
+
+def possible_mine_limits(stats):
+    return  (sum(n) for n in zip(*((st.min_mines(), st.max_mines()) for st in stats))) if stats else (0, 0)
 
 def nondiscrete_relative_likelihood(p, k, k0):
     """given binomial probability (p,k,n) => p^k*(1-p)^(n-k),
