@@ -41,12 +41,21 @@ function Board (width, height) {
     if (!cell.visible) {
       cell.visible = true;
 
-      if (cell.state == 0) {
-        this.for_each_neighbor(r, c, function (r, c, neighb, board) {
-            board.uncover(r, c);
-          });
+      if (cell.state == 'mine') {
+        return false;
+      } else {
+        if (cell.state == 0) {
+          this.for_each_neighbor(r, c, function (r, c, neighb, board) {
+              board.uncover(r, c);
+            });
+        }
+        return true;
       }
     }
+  }
+
+  this.flag = function (r, c) {
+    this.get_cell(r, c).flagged = true;
   }
 
   this.cell_ix = function (r, c) {
@@ -132,6 +141,19 @@ function Board (width, height) {
     return {span: cell_width, corner: corner, center: center};
   }
 
+  this.cell_from_xy = function (p, canvas) {
+    var dim = this.cell_dim(canvas);
+    var r = Math.floor(p.y / dim);
+    var c = Math.floor(p.x / dim);
+    if (r >= 0 && r < this.height && c >= 0 && c < this.width) {
+      var g = this.geom(r, c, canvas);
+      var inside = (p.x - g.corner[0] < g.span && p.y - g.corner[1] < g.span);
+      return {r: r, c: c, inside: inside};
+    } else {
+      return null;
+    }
+  }
+
   this.for_each_cell = function (func) {
     for (var r = 0; r < this.height; r++) {
       for (var c = 0; c < this.width; c++) {
@@ -146,6 +168,78 @@ function Board (width, height) {
       var neighb = adj[i];
       func(neighb.ix.r, neighb.ix.c, neighb.cell, this);
     }
+  }
+
+  this.game_state = function (everything_mode) {
+    var rules = [];
+    var clear_cells = [];
+    var zero_cells = [];
+    var relevant_mines = [];
+    var num_known_mines = 0;
+
+    var mk_rule = function(num_mines, cells) {
+      var rule = {num_mines: num_mines, cells: []};
+      for (var i = 0; i < cells.length; i++) {
+        rule.cells.push(cells[i].name);
+      }
+      return rule;
+    }
+
+    var add = function(set, elem) {
+      if (set.indexOf(elem) == -1) {
+        set.push(elem);
+      }
+    }
+
+    this.for_each_cell(function (r, c, cell, board) {
+        if (cell.state == 'mine' && cell.flagged) {
+          num_known_mines += 1;
+          if (everything_mode) {
+            add(relevant_mines, cell);
+          }
+        } else if (cell.visible) {
+          add(clear_cells, cell);
+          if (cell.state > 0) {
+            var cells_of_interest = [];
+            var on_frontier = false;
+            board.for_each_neighbor(r, c, function (r, c, neighbor, board) {
+                if (!neighbor.visible || neighbor.state == 'mine') {
+                  cells_of_interest.push(neighbor);
+                  if (neighbor.state == 'mine' && neighbor.flagged) {
+                    add(relevant_mines, neighbor);
+                  } else if (!neighbor.visible) {
+                    on_frontier = true;
+                  }
+                }
+              });
+
+            if (everything_mode || on_frontier) {
+              rules.push(mk_rule(cell.state, cells_of_interest));
+            }
+          } else {
+            board.for_each_neighbor(r, c, function (r, c, neighbor, board) {
+                add(zero_cells, neighbor);
+              });
+          }
+        }
+      });
+
+    for (var i = 0; i < relevant_mines.length; i++) {
+      rules.push(mk_rule(1, [relevant_mines[i]]));
+    }
+    if (everything_mode) {
+      rules.push(mk_rule(0, clear_cells));
+      rules.push(mk_rule(0, zero_cells));
+    }
+
+    var num_irrelevant_mines = num_known_mines - relevant_mines.length;
+    var state = {rules: rules, total_cells: this.num_cells() - (everything_mode ? 0 : clear_cells.length + num_irrelevant_mines)};
+    if (this.num_mines != null) {
+      state.total_mines = this.num_mines - (everything_mode ? 0 : num_irrelevant_mines);
+    } else {
+      state.mine_prob = this.mine_prob;
+    }
+    return state;
   }
 }
 
@@ -214,4 +308,60 @@ function pad(i, n) {
   while (s.length < n) {
     s = '0' + s;
   }
+  return s;
 }
+
+function mousePos(evt, elem) {
+  return {x: evt.pageX - elem.offsetLeft, y: evt.pageY - elem.offsetTop};
+}
+
+
+
+$(document).ready(function(){
+    var canvas = $('#gameboard')[0];
+
+    x = new Board(30, 16);
+    x.populate_p(.2);
+    x.uncover(3, 3);
+    x.flag(3, 10);
+    x.render(canvas);
+
+    console.log(x.game_state());
+
+    for (var i = 0; i < 4; i++) {
+      for (var j = 0; j < 3; j++) {
+        x.render_overlay(4+j, 6+i, prob_shade(0.), canvas);
+      }
+    }
+    for (var i = 0; i < 4; i++) {
+      for (var j = 0; j < 3; j++) {
+        x.render_overlay(4+j, 13+i, prob_shade(1.), canvas);
+      }
+    }
+    var k = .0001;
+    for (var i = 0; i < 4; i++) {
+      for (var j = 0; j < 3; j++) {
+        x.render_overlay(9+2*j, 6+2*i, prob_shade(k), canvas);
+        k += .9998 / 11;
+      }
+    }
+    
+    $("#tooltip").hide();
+    $("#gameboard").mousemove(function(e){
+        var pos = mousePos(e, canvas);
+        var p = x.cell_from_xy(pos, canvas);
+        if (p) {
+          $("#tooltip").show();
+          $("#tooltip").css({
+              top: (e.pageY + 50) + "px",
+              left: (e.pageX + 15) + "px"
+            });
+          $('#tooltip').text(p.r + ' ' + p.c);
+        } else {
+          $('#tooltip').hide();
+        }
+      });
+    $("#gameboard").mouseout(function(e){
+        $("#tooltip").hide();
+      });
+  });
