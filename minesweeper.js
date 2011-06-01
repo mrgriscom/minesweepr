@@ -22,22 +22,18 @@ function Board (width, height) {
     for (var i = 0; i < mine_dist.length; i++) {
       this.cells.push(new Cell(null, mine_dist[i] ? 'mine' : null, false, false));
     }
-    for (var r = 0; r < this.height; r++) {
-      for (var c = 0; c < this.width; c++) {
-        var cell = this.get_cell(r, c);
-        cell.name = this.cell_name(r, c);
+    this.for_each_cell(function (r, c, cell, board) {
+        cell.name = board.cell_name(r, c);
         if (cell.state != 'mine') {
           var count = 0;
-          var neighb = this.neighbors(r, c);
-          for (var i = 0; i < neighb.length; i++) {
-            if (neighb[i].state == 'mine') {
-              count++;
-            }
-          }
+          board.for_each_neighbor(r, c, function (r, c, neighb, board) {
+              if (neighb.state == 'mine') {
+                count++;
+              }
+            });
           cell.state = count;
         }
-      }
-    }
+      });
   }
 
   this.uncover = function (r, c) {
@@ -46,11 +42,9 @@ function Board (width, height) {
       cell.visible = true;
 
       if (cell.state == 0) {
-        var adj = this.adjacent(r, c);
-        for (var i = 0; i < adj.length; i++) {
-          var adj_id = adj[i][0];
-          this.uncover(adj_id[0], adj_id[1]);
-        }
+        this.for_each_neighbor(r, c, function (r, c, neighb, board) {
+            board.uncover(r, c);
+          });
       }
     }
   }
@@ -72,17 +66,9 @@ function Board (width, height) {
     for (var _r = Math.max(r - 1, 0); _r <= Math.min(r + 1, height - 1); _r++) {
       for (var _c = Math.max(c - 1, 0); _c <= Math.min(c + 1, width - 1); _c++) {
         if (_r != r || _c != c) {
-          adj.push([[_r, _c], this.get_cell(_r, _c)]);
+          adj.push({ix: {r: _r, c: _c}, cell: this.get_cell(_r, _c)});
         }
       }
-    }
-    return adj;
-  }
-
-  this.neighbors = function (r, c) {
-    var adj = this.adjacent(r, c);
-    for (var i = 0; i < adj.length; i++) {
-      adj[i] = adj[i][1];
     }
     return adj;
   }
@@ -114,14 +100,11 @@ function Board (width, height) {
 
   this.safe_cell = function () {
     var c = [];
-    for (var r = 0; r < this.height; r++) {
-      for (var c = 0; c < this.width; c++) {
-        var cell = this.get_cell(r, c);
+    this.for_each_cell(function (r, c, cell, board) {
         if (cell.state != 'mine') {
           c.push([r, c]);
         }
-      }
-    }
+      });
     return c[Math.floor(Math.random() * c.length)];
   }
 
@@ -132,11 +115,9 @@ function Board (width, height) {
   this.render = function (canvas, params) {
     params = params || {};
 
-    for (var r = 0; r < this.height; r++) {
-      for (var c = 0; c < this.width; c++) {
-        this.get_cell(r, c).render(this.geom(r, c, canvas), canvas.getContext('2d'), params);
-      }
-    }
+    this.for_each_cell(function (r, c, cell, board) {
+        cell.render(board.geom(r, c, canvas), canvas.getContext('2d'), params);
+      });
   }
 
   this.render_overlay = function(r, c, fill, canvas) {
@@ -149,6 +130,22 @@ function Board (width, height) {
     var corner = [c * dim, r * dim];
     var center = [corner[0] + .5 * cell_width, corner[1] + .5 * cell_width];
     return {span: cell_width, corner: corner, center: center};
+  }
+
+  this.for_each_cell = function (func) {
+    for (var r = 0; r < this.height; r++) {
+      for (var c = 0; c < this.width; c++) {
+        func(r, c, this.get_cell(r, c), this);
+      }
+    }
+  }
+
+  this.for_each_neighbor = function (r, c, func) {
+    var adj = this.adjacent(r, c);
+    for (var i = 0; i < adj.length; i++) {
+      var neighb = adj[i];
+      func(neighb.ix.r, neighb.ix.c, neighb.cell, this);
+    }
   }
 }
 
