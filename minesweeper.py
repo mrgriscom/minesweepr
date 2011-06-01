@@ -27,9 +27,12 @@ def solve(rules, mine_prevalence):
     determined |= set(f.trivial_rule() for f in trivial_fronts)
     fronts -= trivial_fronts
 
-    stats = [enumerate_front(f) for f in fronts]
-    stats.extend(r.to_stat() for r in determined)
-    cell_probabilities(stats, mine_prevalence, all_cells)
+    stats = set(enumerate_front(f) for f in fronts)
+    stats.update(r.tally() for r in determined)
+    cell_probs = cell_probabilities(stats, mine_prevalence, all_cells)
+
+    for cell_p in expand_cells(cell_probs):
+        yield cell_p
 
 class Rule(object):
     # num_mines: # of mines contained in 'cells'
@@ -87,14 +90,8 @@ class Rule_(object):
     def is_trivial(self):
         return len(self.cells_) == 1
 
-    def to_stat(self):
-        if not self.is_trivial():
-            raise ValueError()
-
-        tally = FrontTally()
-        tally.total = choose(self.num_cells, self.num_mines)
-        tally.tally = {_0(self.cells_): self.num_mines}
-        return {self.num_mines: tally}
+    def tally(self):
+        return FrontTally.from_rule(self)
 
     def __repr__(self):
         return 'Rule_(num_mines=%d, num_cells=%d, cells_=%s)' % (self.num_mines, self.num_cells,
@@ -540,6 +537,62 @@ class EnumerationState(object):
 
 class FrontTally(object):
     def __init__(self):
+        self.subtallies = collections.defaultdict(FrontSubtally)
+
+    def tally(self, front):
+        for config in front.enumerate():
+            self.subtallies[config.k()].add(config)
+
+        if not self.subtallies:
+            # front has no possible configurations
+            raise InconsistencyError()
+
+        self.finalize()
+
+    def finalize(self):
+        for subtally in self.subtallies.values():
+            subtally.finalize()
+
+    def min_mines(self):
+        return min(self.subtallies)
+
+    def max_mines(self):
+        return max(self.subtallies)
+
+    def is_static(self):
+        return len(self.subtallies) == 1
+
+    def __iter__(self):
+        return self.subtallies.iteritems()
+
+    def normalize(self):
+        total = sum(subtally.total for subtally in self.subtallies.values())
+        for subtally in self.subtallies.values():
+            subtally.total /= float(total)
+            
+    def collapse(self):
+        self.normalize()
+        return map_reduce(self.subtallies.values(), lambda subtally: subtally.collapse(), sum)
+
+    @staticmethod
+    def from_rule(rule):
+        if not rule.is_trivial():
+            raise ValueError()
+
+        subtally = FrontSubtally()
+        subtally.total = choose(rule.num_cells, rule.num_mines)
+        subtally.tally = {_0(rule.cells_): rule.num_mines}
+        # already finalized
+
+        tally = FrontTally()
+        tally.subtallies[rule.num_mines] = subtally
+        return tally
+
+    def __repr__(self):
+        return str(dict(self.subtallies))
+
+class FrontSubtally(object):
+    def __init__(self):
         self.total = 0
         self.tally = collections.defaultdict(lambda: 0)
 
@@ -552,48 +605,68 @@ class FrontTally(object):
     def finalize(self):
         self.tally = dict((cell_, n / float(self.total)) for cell_, n in self.tally.iteritems())
 
+    def collapse(self):
+        for cell_, expected_mines in self.tally.iteritems():
+            yield (cell_, self.total * expected_mines)
+
     def __repr__(self):
-        return str((self.total, self.tally))
+        return str((self.total, dict(self.tally)))
 
 def enumerate_front(front):
-    tally = collections.defaultdict(lambda: FrontTally())
-
-    for config in front.enumerate():
-        num_mines = config.k()
-        subtally = tally[num_mines]
-        subtally.add(config)
-
-    if not tally:
-        # front has no possible configurations
-        raise InconsistencyError()
-
-    for subtally in tally.values():
-        subtally.finalize()
+    tally = FrontTally()
+    tally.tally(front)
     return tally
 
 def cell_probabilities(stats, mine_prevalence, all_cells):
     discrete_mode = isinstance(mine_prevalence, MineCount)
 
     if discrete_mode:
-        min_possible_mines, max_possible_mines = (sum(f(st.keys()) for st in stats) for f in (min, max))
-        num_uncharted_cells = mine_prevalence.total_cells - sum(len(cell_) for cell_ in all_cells)
-        #print min_possible_mines, max_possible_mines, num_uncharted_cells
+        num_uncharted_cells = check_count_consistency(stats, mine_prevalence, all_cells)
 
-        if min_possible_mines > mine_prevalence.total_mines:
-            # min # of permuted mines is more than the total # of mines available
-            raise InconsistencyError()
-        if mine_prevalence.total_mines > max_possible_mines + num_uncharted_cells:
-            # the max # of mines that can fit on the board is less than the total # specified
-            raise InconsistencyError()
+    dynamic_stats = set(st for st in stats if not st.is_static())
+    if discrete_mode:
+        num_static_mines = sum(st.max_mines() for st in stats - dynamic_stats)
+        at_large_mines = mine_prevalence.total_mines - num_static_mines
 
-"""
-    if total mines limited:
-        sum min #mines for all fronts
-        if > total #:
-          inconsistent
+        # dont forget 'other' probability
+    else:
+        for st in stats:
+            for num_mines, subtally in st:
+                subtally.total *= nondiscrete_relative_likelihood(mine_prevalence, num_mines, st.min_mines())
 
-    pass
-"""
+    return itertools.chain(*(st.collapse().iteritems() for st in stats))
+
+def check_count_consistency(stats, mine_prevalence, all_cells):
+    min_possible_mines, max_possible_mines = (sum(n) for n in zip(*((st.min_mines(), st.max_mines()) for st in stats)))
+    num_uncharted_cells = mine_prevalence.total_cells - sum(len(cell_) for cell_ in all_cells)
+
+    if min_possible_mines > mine_prevalence.total_mines:
+        # min # of permuted mines is more than the total # of mines available
+        raise InconsistencyError()
+    if mine_prevalence.total_mines > max_possible_mines + num_uncharted_cells:
+        # the max # of mines that can fit on the board is less than the total # specified
+        raise InconsistencyError()
+
+    return num_uncharted_cells
+
+def nondiscrete_relative_likelihood(p, k, k0):
+    """given binomial probability (p,k,n) => p^k*(1-p)^(n-k),
+    return binom_prob(p,k,n) / binom_prob(p,k0,n)"""
+    return (p / (1 - p))**(k - k0)
+
+def discrete_relative_likelihood(n, k, k0):
+    """return 'n choose k' / 'n choose k0'"""
+    return fact_div(k0, k) * fact_div(n - k0, n - k)
+
+def expand_cells(cell_probs):
+    for cell_, p in cell_probs:
+        for cell in cell_:
+            yield (cell, p / len(cell_))
+
+
+
+
+# utility code for loading game boards from text files
 
 def read_board(encoded_board, total_mines, everything_mode=False):
     board = Board(encoded_board)
@@ -644,6 +717,7 @@ class BoardCell(object):
     def is_unknown(self):
         return self.type == 'unkn'
 
+# reference algorithm for generating input rules from a game state
 def generate_rules(board, total_mines, everything_mode):
     rules = []
     clear_cells = set()
@@ -681,8 +755,11 @@ def generate_rules(board, total_mines, everything_mode):
 set_ = frozenset
 
 def fact_div(a, b):
-    """return a!/b!, a > b"""
-    return reduce(operator.mul, xrange(b + 1, a + 1), 1)
+    """return a!/b!"""
+    if a >= b:
+        return reduce(operator.mul, xrange(b + 1, a + 1), 1)
+    else:
+        return reduce(operator.div, xrange(a + 1, b + 1), 1.)
 
 def choose(n, k):
     if n == 1:
