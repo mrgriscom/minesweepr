@@ -85,12 +85,9 @@ function Board (width, height) {
   this.n_dist = function () {
     m = [];
     for (var i = 0; i < this.num_cells(); i++) {
-      m[i] = [Math.random(), (i < this.num_mines)];
+      m[i] = (i < this.num_mines);
     }
-    m.sort(function (a, b) { return a[0] - b[0]; });
-    for (var i = 0; i < this.num_cells(); i++) {
-      m[i] = m[i][1];
-    }    
+    shuffle(m);
     return m;
   }
 
@@ -288,7 +285,7 @@ function Cell (name, state, visible, flagged) {
 
 HIDDEN_BG = 'rgb(200, 200, 200)';
 VISIBLE_BG = 'rgb(230, 230, 230)';
-MINE_FILL = 'rgba(0, 0, 0, .5)';
+MINE_FILL = 'rgba(0, 0, 0, .2)';
 EXPLODED = 'rgba(255, 0, 0, .8)';
 COUNT_FILL = ['blue', 'green', 'red', 'purple', 'brown', 'cyan', 'orange', 'black'];
 MARGIN = 1;
@@ -323,81 +320,122 @@ function mousePos(evt, elem) {
   return {x: evt.pageX - elem.offsetLeft, y: evt.pageY - elem.offsetTop};
 }
 
+function shuffle(data) {
+  var buf = [];
+  for (var i = 0; i < data.length; i++) {
+    buf[i] = [Math.random(), data[i]];
+  }
+  buf.sort(function (a, b) { return a[0] - b[0]; });
+  for (var i = 0; i < data.length; i++) {
+    data[i] = buf[i][1];
+  }    
+}
 
 
 
 
-
-
-function render_overlays (board, cell_probs, canvas) {
+function apply(board, cell_probs, func) {
   var names = [];
   for (var name in cell_probs) {
     names.push(name);
   }
   board.for_each_name(names, function (r, c, cell, board) {
-      board.render_overlay(r, c, prob_shade(cell_probs[cell.name]), canvas);
+      func(r, c, cell, cell_probs[cell.name], board);
     });
-
+  
   var other_prob = cell_probs['_other'];
   if (other_prob != null) {
     board.for_each_cell(function (r, c, cell, board) {
         if (!cell.visible && names.indexOf(cell.name) == -1) {
-          board.render_overlay(r, c, prob_shade(other_prob), canvas);
+          func(r, c, cell, other_prob, board);
         }
       });
   }
 }
 
+function render_overlays (board, cell_probs, canvas) {
+  apply(board, cell_probs, function (r, c, cell, prob, board) {
+      if (!cell.flagged) {
+        board.render_overlay(r, c, prob_shade(prob), canvas);
+      }
+    });
+}
+
+function make_board (w, h, mine_factor, mine_mode) {
+  board = new Board(w, h);
+  board[{'count': 'populate_n', 'prob': 'populate_p'}[mine_mode]](mine_factor);
+  return board;
+}
+
+function solve(board, url, callback) {
+  $.post(url, JSON.stringify(board.game_state()), function (data) {
+      if (data['_other'] == null && x.mine_prob != null) {
+        data['_other'] = x.mine_prob;
+      }
+      
+      callback(data, board);
+    }, "json");
+}
+
+function display_solution(cell_probs, board, canvas) {
+  render_overlays(board, cell_probs, canvas);
+  current_probs = cell_probs;
+}
+
+function action(board, cell_probs, canvas) {
+  var must_guess = true;
+  var guesses = [];
+  var min_prob = 1.;
+  apply(board, cell_probs, function (r, c, cell, prob, board) {
+      if (prob < EPSILON) {
+        board.uncover(r, c);
+        must_guess = false;
+      } else if (prob > 1. - EPSILON) {
+        board.flag(r, c);
+      } else {
+        guesses.push({r: r, c: c, p: prob});
+        min_prob = Math.min(min_prob, prob);
+      }
+    });
+  if (must_guess) {
+    var best_guesses = [];
+    for (var i = 0; i < guesses.length; i++) {
+      if (guesses[i].p < min_prob + EPSILON) {
+        best_guesses.push(guesses[i]);
+      }
+    }
+    shuffle(best_guesses);
+    var guess = best_guesses[0];
+    board.uncover(guess.r, guess.c);
+  }
+  board.render(canvas);
+}
+
+function go(board, canvas) {
+  action(board, current_probs, canvas);
+  solve(board, 'http://127.0.0.1:4444', function (data, board) { display_solution(data, board, canvas); });
+}
+
 $(document).ready(function(){
-    netscape.security.PrivilegeManager.enablePrivilege("UniversalBrowserRead");
+    //  netscape.security.PrivilegeManager.enablePrivilege("UniversalBrowserRead");
 
-    var canvas = $('#gameboard')[0];
+    canvas = $('#gameboard')[0];
 
-    x = new Board(30, 16);
-    x.populate_n(66);
-    x.uncover(3, 3);
-    x.flag(3, 10);
-    x.render(canvas);
+    board = make_board(30, 16, 99, 'count');
+    board.render(canvas);
 
-    console.log(x.game_state());
+    solve(board, 'http://127.0.0.1:4444', function (data, board) { display_solution(data, board, canvas); });
 
-    $.post('http://127.0.0.1:4444/', JSON.stringify(x.game_state()), function (data) {
-        if (data['_other'] == null && x.mine_prob != null) {
-          data['_other'] = x.mine_prob;
-        }
+    $('#go').click(function () { go(board, canvas); });
 
-        render_overlays(x, data, canvas);
-        current_probs = data;
-      }, "json");
-
-    /*
-    for (var i = 0; i < 4; i++) {
-      for (var j = 0; j < 3; j++) {
-        x.render_overlay(4+j, 6+i, prob_shade(0.), canvas);
-      }
-    }
-    for (var i = 0; i < 4; i++) {
-      for (var j = 0; j < 3; j++) {
-        x.render_overlay(4+j, 13+i, prob_shade(1.), canvas);
-      }
-    }
-    var k = .0001;
-    for (var i = 0; i < 4; i++) {
-      for (var j = 0; j < 3; j++) {
-        x.render_overlay(9+2*j, 6+2*i, prob_shade(k), canvas);
-        k += .9998 / 11;
-      }
-    }
-    */
-    
     $("#tooltip").hide();
     $("#gameboard").mousemove(function(e){
         var coord = mousePos(e, canvas);
-        var pos = x.cell_from_xy(coord, canvas);
+        var pos = board.cell_from_xy(coord, canvas);
 
         var prob = null;
         if (pos) {
-          var cell = x.get_cell(pos.r, pos.c);
+          var cell = board.get_cell(pos.r, pos.c);
           prob = current_probs[cell.name];
           if (prob == null && !cell.visible && !cell.flagged) {
             prob = current_probs['_other'];
