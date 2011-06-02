@@ -380,6 +380,9 @@ function solve(board, url, callback) {
 function display_solution(cell_probs, board, canvas) {
   render_overlays(board, cell_probs, canvas);
   current_probs = cell_probs;
+
+  $('#num_mines').text(remaining_mines);
+  $('#risk').text((100. * total_risk).toFixed(2) + '%');
 }
 
 function action(board, cell_probs, canvas) {
@@ -391,6 +394,9 @@ function action(board, cell_probs, canvas) {
         board.uncover(r, c);
         must_guess = false;
       } else if (prob > 1. - EPSILON) {
+        if (!cell.flagged) {
+          remaining_mines--;
+        }
         board.flag(r, c);
       } else {
         guesses.push({r: r, c: c, p: prob});
@@ -409,6 +415,7 @@ function action(board, cell_probs, canvas) {
       shuffle(best_guesses);
       var guess = best_guesses[0];
       board.uncover(guess.r, guess.c);
+      total_risk = 1. - (1. - total_risk) * (1. - min_prob);
     }
   }
   board.render(canvas);
@@ -426,6 +433,9 @@ $(document).ready(function(){
 
     board = make_board(30, 16, 99, 'count');
     board.render(canvas);
+
+    remaining_mines = board.num_mines;
+    total_risk = 0.;
 
     solve(board, 'http://127.0.0.1:4444', function (data, board) { display_solution(data, board, canvas); });
 
