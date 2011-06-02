@@ -63,6 +63,20 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(reply.encode('utf-8'))
         logging.debug('returned: [%s]' % reply)
 
+    # stupid same-origin policy
+    def do_GET(self):
+        import os.path
+        path = os.path.join(os.path.dirname(__file__), '.' + self.path)
+        try:
+            with open(path) as f:
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(f.read())
+        except:
+            self.send_response(404)
+            self.end_headers()
+
 def handle_request (content, **kwargs):
     if 'mine_prob' in content:
         mine_p = content['mine_prob']

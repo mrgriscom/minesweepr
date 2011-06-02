@@ -369,8 +369,8 @@ function make_board (w, h, mine_factor, mine_mode) {
 
 function solve(board, url, callback) {
   $.post(url, JSON.stringify(board.game_state()), function (data) {
-      if (data['_other'] == null && x.mine_prob != null) {
-        data['_other'] = x.mine_prob;
+      if (data['_other'] == null && board.mine_prob != null) {
+        data['_other'] = board.mine_prob;
       }
       
       callback(data, board);
@@ -404,9 +404,12 @@ function action(board, cell_probs, canvas) {
         best_guesses.push(guesses[i]);
       }
     }
-    shuffle(best_guesses);
-    var guess = best_guesses[0];
-    board.uncover(guess.r, guess.c);
+    if (best_guesses.length) {
+      // only occurs at the very end when all there is left to do is flag remaining mines
+      shuffle(best_guesses);
+      var guess = best_guesses[0];
+      board.uncover(guess.r, guess.c);
+    }
   }
   board.render(canvas);
 }
