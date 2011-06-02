@@ -367,6 +367,7 @@ $(document).ready(function(){
         }
 
         render_overlays(x, data, canvas);
+        current_probs = data;
       }, "json");
 
     /*
@@ -391,15 +392,24 @@ $(document).ready(function(){
     
     $("#tooltip").hide();
     $("#gameboard").mousemove(function(e){
-        var pos = mousePos(e, canvas);
-        var p = x.cell_from_xy(pos, canvas);
-        if (p) {
+        var coord = mousePos(e, canvas);
+        var pos = x.cell_from_xy(coord, canvas);
+
+        var prob = null;
+        if (pos) {
+          var cell = x.get_cell(pos.r, pos.c);
+          prob = current_probs[cell.name];
+          if (prob == null && !cell.visible && !cell.flagged) {
+            prob = current_probs['_other'];
+          }
+        }
+        if (prob > EPSILON && prob < 1. - EPSILON) {
           $("#tooltip").show();
           $("#tooltip").css({
-              top: (e.pageY + 50) + "px",
+              top: (e.pageY - 15) + "px",
               left: (e.pageX + 15) + "px"
             });
-          $('#tooltip').text(p.r + ' ' + p.c);
+          $('#tooltip').text((100. * prob).toFixed(2) + '%');
         } else {
           $('#tooltip').hide();
         }
