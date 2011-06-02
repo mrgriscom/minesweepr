@@ -362,6 +362,8 @@ function render_overlays (board, cell_probs, canvas) {
 }
 
 function make_board (w, h, mine_factor, mine_mode) {
+  mine_mode = mine_mode || (mine_factor >= 1. ? 'count' : 'prob');
+
   board = new Board(w, h);
   board[{'count': 'populate_n', 'prob': 'populate_p'}[mine_mode]](mine_factor);
   return board;
@@ -380,9 +382,6 @@ function solve(board, url, callback) {
 function display_solution(cell_probs, board, canvas) {
   render_overlays(board, cell_probs, canvas);
   current_probs = cell_probs;
-
-  $('#num_mines').text(remaining_mines);
-  $('#risk').text((100. * total_risk).toFixed(2) + '%');
 }
 
 function action(board, cell_probs, canvas) {
@@ -395,7 +394,7 @@ function action(board, cell_probs, canvas) {
         board.uncover(r, c);
         must_guess = false;
       } else if (prob > 1. - EPSILON) {
-        if (!cell.flagged) {
+        if (!cell.flagged && board.num_mines) {
           remaining_mines--;
         }
         board.flag(r, c);
@@ -423,8 +422,14 @@ function action(board, cell_probs, canvas) {
   return survived;
 }
 
+function update_stats() {
+  $('#num_mines').text(remaining_mines);
+  $('#risk').text((100. * total_risk).toFixed(2) + '%');
+}
+
 function go(board, canvas) {
   var survived = action(board, current_probs, canvas);
+  update_stats();
   if (survived) {
     solve(board, 'http://127.0.0.1:4444', function (data, board) { display_solution(data, board, canvas); });
   }
@@ -435,10 +440,10 @@ $(document).ready(function(){
 
     canvas = $('#gameboard')[0];
 
-    board = make_board(30, 16, 99, 'count');
+    board = make_board(30, 16, 100);
     board.render(canvas);
 
-    remaining_mines = board.num_mines;
+    remaining_mines = board.num_mines || '??';
     total_risk = 0.;
 
     solve(board, 'http://127.0.0.1:4444', function (data, board) { display_solution(data, board, canvas); });
