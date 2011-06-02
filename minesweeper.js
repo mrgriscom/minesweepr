@@ -170,6 +170,14 @@ function Board (width, height) {
     }
   }
 
+  this.for_each_name = function (names, func) {
+    this.for_each_cell(function (r, c, cell, board) {
+        if (names.indexOf(cell.name) != -1) {
+          func(r, c, cell, board);
+        }
+      });
+  }
+
   this.game_state = function (everything_mode) {
     var rules = [];
     var clear_cells = [];
@@ -317,17 +325,51 @@ function mousePos(evt, elem) {
 
 
 
+
+
+
+
+function render_overlays (board, cell_probs, canvas) {
+  var names = [];
+  for (var name in cell_probs) {
+    names.push(name);
+  }
+  board.for_each_name(names, function (r, c, cell, board) {
+      board.render_overlay(r, c, prob_shade(cell_probs[cell.name]), canvas);
+    });
+
+  var other_prob = cell_probs['_other'];
+  if (other_prob != null) {
+    board.for_each_cell(function (r, c, cell, board) {
+        if (!cell.visible && names.indexOf(cell.name) == -1) {
+          board.render_overlay(r, c, prob_shade(other_prob), canvas);
+        }
+      });
+  }
+}
+
 $(document).ready(function(){
+    netscape.security.PrivilegeManager.enablePrivilege("UniversalBrowserRead");
+
     var canvas = $('#gameboard')[0];
 
     x = new Board(30, 16);
-    x.populate_p(.2);
+    x.populate_n(66);
     x.uncover(3, 3);
     x.flag(3, 10);
     x.render(canvas);
 
     console.log(x.game_state());
 
+    $.post('http://127.0.0.1:4444/', JSON.stringify(x.game_state()), function (data) {
+        if (data['_other'] == null && x.mine_prob != null) {
+          data['_other'] = x.mine_prob;
+        }
+
+        render_overlays(x, data, canvas);
+      }, "json");
+
+    /*
     for (var i = 0; i < 4; i++) {
       for (var j = 0; j < 3; j++) {
         x.render_overlay(4+j, 6+i, prob_shade(0.), canvas);
@@ -345,6 +387,7 @@ $(document).ready(function(){
         k += .9998 / 11;
       }
     }
+    */
     
     $("#tooltip").hide();
     $("#gameboard").mousemove(function(e){
