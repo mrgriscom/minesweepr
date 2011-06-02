@@ -705,7 +705,7 @@ def discrete_relative_likelihood(n, k, k0):
     return float(fact_div(k0, k) * fact_div(n - k0, n - k))
 
 class UnchartedCell(object):
-    UNCHARTED_TAG = ''
+    OTHER_TAG = None
 
     def __init__(self, size):
         self.size = size
@@ -715,7 +715,7 @@ class UnchartedCell(object):
 
     def __iter__(self):
         if self.size > 0:
-            yield self.UNCHARTED_TAG
+            yield self.OTHER_TAG
 
 def expand_cells(cell_probs):
     for cell_, p in cell_probs:

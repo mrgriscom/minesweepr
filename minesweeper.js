@@ -389,6 +389,7 @@ function action(board, cell_probs, canvas) {
   var must_guess = true;
   var guesses = [];
   var min_prob = 1.;
+  var survived = true;
   apply(board, cell_probs, function (r, c, cell, prob, board) {
       if (prob < EPSILON) {
         board.uncover(r, c);
@@ -414,16 +415,19 @@ function action(board, cell_probs, canvas) {
       // only occurs at the very end when all there is left to do is flag remaining mines
       shuffle(best_guesses);
       var guess = best_guesses[0];
-      board.uncover(guess.r, guess.c);
+      survived = board.uncover(guess.r, guess.c);
       total_risk = 1. - (1. - total_risk) * (1. - min_prob);
     }
   }
   board.render(canvas);
+  return survived;
 }
 
 function go(board, canvas) {
-  action(board, current_probs, canvas);
-  solve(board, 'http://127.0.0.1:4444', function (data, board) { display_solution(data, board, canvas); });
+  var survived = action(board, current_probs, canvas);
+  if (survived) {
+    solve(board, 'http://127.0.0.1:4444', function (data, board) { display_solution(data, board, canvas); });
+  }
 }
 
 $(document).ready(function(){

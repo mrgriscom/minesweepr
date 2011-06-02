@@ -86,9 +86,9 @@ def handle_request (content, **kwargs):
     rules = [m.Rule(r['num_mines'], r['cells']) for r in content['rules']]
 
     result = dict(m.solve(rules, mine_p))
-    if '' in result:
-        result['_other'] = result['']
-        del result['']
+    if m.UnchartedCell.OTHER_TAG in result:
+        result['_other'] = result[m.UnchartedCell.OTHER_TAG]
+        del result[m.UnchartedCell.OTHER_TAG]
     return result
 
 if __name__ == "__main__":
