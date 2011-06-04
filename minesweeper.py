@@ -11,7 +11,7 @@ MineCount = collections.namedtuple('MineCount', ['total_cells', 'total_mines'])
 #   'uncharted' cells
 # total_mines: total # of mines contained within all cells
 
-def solve(rules, mine_prevalence):
+def solve(rules, mine_prevalence, other_tag=None):
     # mine_prevalence is a MineCount or float (base probability that cell is mine)
 
     rules, all_cells = condense_supercells(rules)
@@ -30,9 +30,7 @@ def solve(rules, mine_prevalence):
     stats = set(enumerate_front(f) for f in fronts)
     stats.update(r.tally() for r in determined)
     cell_probs = cell_probabilities(stats, mine_prevalence, all_cells)
-
-    for cell_p in expand_cells(cell_probs):
-        yield cell_p
+    return dict(expand_cells(cell_probs, other_tag))
 
 class Rule(object):
     # num_mines: # of mines contained in 'cells'
@@ -705,8 +703,6 @@ def discrete_relative_likelihood(n, k, k0):
     return float(fact_div(k0, k) * fact_div(n - k0, n - k))
 
 class UnchartedCell(object):
-    OTHER_TAG = None
-
     def __init__(self, size):
         self.size = size
 
@@ -715,12 +711,12 @@ class UnchartedCell(object):
 
     def __iter__(self):
         if self.size > 0:
-            yield self.OTHER_TAG
+            yield None
 
-def expand_cells(cell_probs):
+def expand_cells(cell_probs, other_tag):
     for cell_, p in cell_probs:
         for cell in cell_:
-            yield (cell, p / len(cell_))
+            yield (cell if cell is not None else other_tag, p / len(cell_))
 
 
 

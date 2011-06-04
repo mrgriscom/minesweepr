@@ -370,7 +370,7 @@ function make_board (w, h, mine_factor, mine_mode) {
 }
 
 function solve(board, url, callback) {
-  $.post(url, JSON.stringify(board.game_state()), function (data) {
+  $.post('/', JSON.stringify(board.game_state()), function (data) {
       if (data['_other'] == null && board.mine_prob != null) {
         data['_other'] = board.mine_prob;
       }
