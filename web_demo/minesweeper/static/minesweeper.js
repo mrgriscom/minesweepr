@@ -1,63 +1,29 @@
 
-function GridTopo (width, height) {
-  this.width = width;
-  this.height = height;
+HIDDEN_BG = 'rgb(200, 200, 200)';
+VISIBLE_BG = 'rgb(230, 230, 230)';
+MINE_FILL = 'rgba(0, 0, 0, .2)';
+EXPLODED = 'rgba(255, 0, 0, .8)';
+COUNT_FILL = ['blue', 'green', 'red', 'purple', 'brown', 'cyan', 'orange', 'black'];
+MARGIN = 1;
+MINE_RADIUS = .5;
+FONT_SIZE = .5;
+FONT_OFFSET = .1;
 
-  this.cell_name = function (pos) {
-    var pad_to = function (i, max) { return pad(i, ('' + max).length); };
-    return pad_to(pos.r, this.height) + '-' + pad_to(pos.c, this.width);
-  }
+EPSILON = 1.0e-6;
 
-  this.cell_ix = function (pos) {
-    return pos.r * this.width + pos.c;
-  }
-
-  this.rev_cell_ix = function(i) {
-    return {r: Math.floor(i / this.width), c: i % this.width};
-  }
-
-  this.num_cells = function () {
-    return this.width * this.height;
-  }
-
-  this.adjacent = function (pos) {
-    var adj = [];
-    for (var r = Math.max(pos.r - 1, 0); r <= Math.min(pos.r + 1, height - 1); r++) {
-      for (var c = Math.max(pos.c - 1, 0); c <= Math.min(pos.c + 1, width - 1); c++) {
-        if (r != pos.r || c != pos.c) {
-          adj.push({r: r, c: c});
-        }
-      }
-    }
-    return adj;
-  }
-
-  this.cell_dim = function (canvas) {
-    var dim = Math.min(canvas.height / this.height, canvas.width / this.width);
-    return (dim >= 10. ? Math.floor(dim) : dim);
-  }
-
-  this.geom = function (pos, canvas) {
-    var dim = this.cell_dim(canvas);
-    var cell_width = dim - MARGIN;
-    var corner = [pos.c * dim, pos.r * dim];
-    var center = [corner[0] + .5 * cell_width, corner[1] + .5 * cell_width];
-    return {span: cell_width, corner: corner, center: center};
-  }
-
-  this.cell_from_xy = function (p, canvas) {
-    var dim = this.cell_dim(canvas);
-    var r = Math.floor(p.y / dim);
-    var c = Math.floor(p.x / dim);
-    if (r >= 0 && r < this.height && c >= 0 && c < this.width) {
-      var g = this.geom(r, c, canvas);
-      var inside = (p.x - g.corner[0] < g.span && p.y - g.corner[1] < g.span);
-      return {r: r, c: c, inside: inside};
-    } else {
-      return null;
-    }
+function prob_shade (p) {
+  if (p < EPSILON) {
+    return 'rgba(0, 0, 255, .2)';
+  } else if (p > 1 - EPSILON) {
+    return 'rgba(255, 0, 0, .2)';
+  } else {
+    var MIN_ALPHA = .05;
+    var MAX_ALPHA = .8;
+    var alpha = MIN_ALPHA * (1 - p) + MAX_ALPHA * p;
+    return 'rgba(0, 255, 0, ' + alpha + ')';
   }
 }
+
 
 
 function Board (topology) {
@@ -295,30 +261,84 @@ function Cell (name, state, visible, flagged) {
   }
 }
 
-HIDDEN_BG = 'rgb(200, 200, 200)';
-VISIBLE_BG = 'rgb(230, 230, 230)';
-MINE_FILL = 'rgba(0, 0, 0, .2)';
-EXPLODED = 'rgba(255, 0, 0, .8)';
-COUNT_FILL = ['blue', 'green', 'red', 'purple', 'brown', 'cyan', 'orange', 'black'];
-MARGIN = 1;
-MINE_RADIUS = .5;
-FONT_SIZE = .5;
-FONT_OFFSET = .1;
 
-EPSILON = 1.0e-6;
+function GridTopo (width, height, wrap, adjfunc) {
+  this.width = width;
+  this.height = height;
+  this.wrap = wrap;
+  this.adjfunc = adjfunc;
 
-function prob_shade (p) {
-  if (p < EPSILON) {
-    return 'rgba(0, 0, 255, .2)';
-  } else if (p > 1 - EPSILON) {
-    return 'rgba(255, 0, 0, .2)';
-  } else {
-    var MIN_ALPHA = .05;
-    var MAX_ALPHA = .8;
-    var alpha = MIN_ALPHA * (1 - p) + MAX_ALPHA * p;
-    return 'rgba(0, 255, 0, ' + alpha + ')';
+  this.cell_name = function (pos) {
+    var pad_to = function (i, max) { return pad(i, ('' + max).length); };
+    return pad_to(pos.r, this.height) + '-' + pad_to(pos.c, this.width);
+  }
+
+  this.cell_ix = function (pos) {
+    return pos.r * this.width + pos.c;
+  }
+
+  this.rev_cell_ix = function(i) {
+    return {r: Math.floor(i / this.width), c: i % this.width};
+  }
+
+  this.num_cells = function () {
+    return this.width * this.height;
+  }
+
+  this.for_range = function(center, dim, wrap, do_) {
+    var BIG = 1e6;
+    var r_lo = Math.max(center.r - dim, wrap ? -BIG : 0);
+    var r_hi = Math.min(center.r + dim, wrap ? +BIG : height - 1);
+    var c_lo = Math.max(center.c - dim, wrap ? -BIG : 0);
+    var c_hi = Math.min(center.c + dim, wrap ? +BIG : width - 1);
+    for (var r = r_lo; r <= r_hi; r++) {
+      for (var c = c_lo; c <= c_hi; c++) {
+        do_((r + this.height) % this.height, (c + this.width) % this.width);
+      }
+    }    
+  }
+
+  this.adjacent = function (pos) {
+    var adj = [];
+    var adjfunc = this.adjfunc || function(topo, pos, do_) {
+      topo.for_range(pos, 1, topo.wrap, do_);
+    };
+    adjfunc(this, pos, function(r, c) {
+        if (r != pos.r || c != pos.c) {
+          adj.push({r: r, c: c});
+        }
+      });
+    return adj;
+  }
+
+  this.cell_dim = function (canvas) {
+    var dim = Math.min(canvas.height / this.height, canvas.width / this.width);
+    return (dim >= 10. ? Math.floor(dim) : dim);
+  }
+
+  this.geom = function (pos, canvas) {
+    var dim = this.cell_dim(canvas);
+    var cell_width = dim - MARGIN;
+    var corner = [pos.c * dim, pos.r * dim];
+    var center = [corner[0] + .5 * cell_width, corner[1] + .5 * cell_width];
+    return {span: cell_width, corner: corner, center: center};
+  }
+
+  this.cell_from_xy = function (p, canvas) {
+    var dim = this.cell_dim(canvas);
+    var r = Math.floor(p.y / dim);
+    var c = Math.floor(p.x / dim);
+    if (r >= 0 && r < this.height && c >= 0 && c < this.width) {
+      var g = this.geom(r, c, canvas);
+      var inside = (p.x - g.corner[0] < g.span && p.y - g.corner[1] < g.span);
+      return {r: r, c: c, inside: inside};
+    } else {
+      return null;
+    }
   }
 }
+
+
 
 function pad(i, n) {
   var s = '' + i;

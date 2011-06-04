@@ -53,12 +53,20 @@ function selectChoice(elem) {
   elem.trigger('change');
 }
 
+function parsemine(raw, w, h) {
+  if (raw[0] == '*') {
+    return Math.round(w * h * +raw.substring(1) * .01);
+  } else {
+    return +raw;
+  }
+}
+
 function new_game() {
   var topo_type = $('input[name="topo"]:checked').val();
   var width = +$('#width').val();
   var height = +$('#height').val();
   var depth = +$('#depth').val();
-  var minespec = +$('#mines').val();
+  var minespec = parsemine($('#mines').val(), width, height);
   var first_safe = $('#first_safe').attr("checked");
 
   var topo = new_topo(topo_type, width, height, depth);
@@ -70,7 +78,19 @@ function new_game() {
 }
 
 function new_topo(type, w, h, d) {
-  return new GridTopo(w, h);
+  if (type == 'grid') {
+    return new GridTopo(w, h);
+  } else if (type == 'torus') {
+    return new GridTopo(w, h, true);
+  } else if (type == 'grid2') {
+    return new GridTopo(w, h, false, function(topo, pos, do_) {
+        topo.for_range(pos, 2, topo.wrap, function(r, c) {
+            if (Math.abs(pos.r - r) + Math.abs(pos.c - c) <= 3) {
+              do_(r, c);
+            }
+          });
+    });
+  }
 }
 
 function new_board(topo, mine_factor, mine_mode) {
@@ -174,7 +194,7 @@ function action(board, cell_probs, canvas) {
 
 function update_stats() {
   $('#num_mines').text(remaining_mines);
-  $('#risk').text((100. * total_risk).toFixed(2) + '%');
+  $('#risk').text(fmt_pct(total_risk));
 }
 
 function go(board, canvas) {
