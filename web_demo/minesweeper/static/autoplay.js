@@ -1,4 +1,6 @@
 
+SOLVER_URL = '/api/minesweeper_solve/';
+
 $(document).ready(function() {
     canvas = $('#game_canvas')[0];
     $(window).resize(resize_canvas);
@@ -71,10 +73,10 @@ function new_game() {
 
   var topo = new_topo(topo_type, width, height, depth);
   board = new_board(topo, minespec);
-  var game = new_game_session(board, first_safe);
+  var game = new GameSession(board, first_safe);
 
   board.render(canvas);
-  solve(board, SOLVE_URL, function (data, board) { display_solution(data, board, canvas); });
+  solve(board, SOLVER_URL, function (data, board) { display_solution(data, board, canvas); });
 }
 
 function new_topo(type, w, h, d) {
@@ -90,6 +92,8 @@ function new_topo(type, w, h, d) {
             }
           });
     });
+  } else if (type == 'hex') {
+    return new HexGridTopo(w, h);
   }
 }
 
@@ -101,13 +105,18 @@ function new_board(topo, mine_factor, mine_mode) {
   return board;
 }
 
-function new_game_session(board, first_safe) {
+function GameSession (board, first_safe) {
+  this.board = board;
+  this.first_safe = first_safe;
+
+
 
 }
 
-function mousePos(evt, elem) {
-  return {x: evt.pageX - elem.offsetLeft, y: evt.pageY - elem.offsetTop};
-}
+
+
+
+
 
 
 
@@ -201,12 +210,14 @@ function go(board, canvas) {
   var survived = action(board, current_probs, canvas);
   update_stats();
   if (survived) {
-    solve(board, SOLVE_URL, function (data, board) { display_solution(data, board, canvas); });
+    solve(board, SOLVER_URL, function (data, board) { display_solution(data, board, canvas); });
   }
 }
 
-SOLVE_URL = '/api/minesweeper_solve/';
 
+function mousePos(evt, elem) {
+  return {x: evt.pageX - elem.offsetLeft, y: evt.pageY - elem.offsetTop};
+}
 
 function prob_tooltip(e) {
   var coord = mousePos(e, canvas);

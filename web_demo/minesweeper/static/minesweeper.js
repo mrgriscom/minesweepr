@@ -8,6 +8,7 @@ MARGIN = 1;
 MINE_RADIUS = .5;
 FONT_SIZE = .5;
 FONT_OFFSET = .1;
+FONT_SCALE_LONG = .8;
 
 EPSILON = 1.0e-6;
 
@@ -212,8 +213,10 @@ function Board (topology) {
   this.render = function (canvas, params) {
     params = params || {};
 
+    var ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     this.for_each_cell(function (pos, cell, board) {
-        cell.render(board.topology.geom(pos, canvas), canvas.getContext('2d'), params);
+        cell.render(board.topology.geom(pos, canvas), ctx, params);
       });
   }
 
@@ -234,7 +237,7 @@ function Cell (name, state, visible, flagged) {
 
   this.render = function (g, ctx, params) {
     ctx.fillStyle = (this.visible ? VISIBLE_BG : HIDDEN_BG);
-    ctx.fillRect(g.corner[0], g.corner[1], g.span, g.span);
+    g.fill(ctx);
 
     if (this.state == 'mine') {
       ctx.fillStyle = (this.visible ? EXPLODED : MINE_FILL);
@@ -246,18 +249,19 @@ function Cell (name, state, visible, flagged) {
         ctx.fill();
       }
     } else if (this.state > 0 && this.visible) {
-      var font_size = g.span * FONT_SIZE;
+      var label = '' + this.state;
+      var font_size = g.span * FONT_SIZE * (label.length > 1 ? FONT_SCALE_LONG : 1.);
       ctx.fillStyle = COUNT_FILL[Math.min(this.state - 1, COUNT_FILL.length - 1)];
       ctx.font = font_size + 'pt sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('' + this.state, g.center[0], g.center[1] + font_size * FONT_OFFSET);
+      ctx.fillText(label, g.center[0], g.center[1] + font_size * FONT_OFFSET);
     }
   }
 
   this.render_overlay = function (g, fill, ctx) {
     ctx.fillStyle = fill;
-    ctx.fillRect(g.corner[0], g.corner[1], g.span, g.span);
+    g.fill(ctx);
   }
 }
 
@@ -269,8 +273,7 @@ function GridTopo (width, height, wrap, adjfunc) {
   this.adjfunc = adjfunc;
 
   this.cell_name = function (pos) {
-    var pad_to = function (i, max) { return pad(i, ('' + max).length); };
-    return pad_to(pos.r, this.height) + '-' + pad_to(pos.c, this.width);
+    return pad_to(pos.r + 1, this.height) + '-' + pad_to(pos.c + 1, this.width);
   }
 
   this.cell_ix = function (pos) {
@@ -318,10 +321,13 @@ function GridTopo (width, height, wrap, adjfunc) {
 
   this.geom = function (pos, canvas) {
     var dim = this.cell_dim(canvas);
-    var cell_width = dim - MARGIN;
+    var span = dim - MARGIN;
     var corner = [pos.c * dim, pos.r * dim];
-    var center = [corner[0] + .5 * cell_width, corner[1] + .5 * cell_width];
-    return {span: cell_width, corner: corner, center: center};
+    var center = [corner[0] + .5 * span, corner[1] + .5 * span];
+    var fillfunc = function(ctx) {
+      ctx.fillRect(corner[0], corner[1], span, span);
+    }
+    return {span: span, center: center, fill: fillfunc};
   }
 
   this.cell_from_xy = function (p, canvas) {
@@ -329,15 +335,103 @@ function GridTopo (width, height, wrap, adjfunc) {
     var r = Math.floor(p.y / dim);
     var c = Math.floor(p.x / dim);
     if (r >= 0 && r < this.height && c >= 0 && c < this.width) {
-      var g = this.geom(r, c, canvas);
-      var inside = (p.x - g.corner[0] < g.span && p.y - g.corner[1] < g.span);
-      return {r: r, c: c, inside: inside};
+      return {r: r, c: c};
     } else {
       return null;
     }
   }
 }
 
+function HexGridTopo (width, height) {
+  this.width = width;
+  this.height = height;
+
+  this.cell_name = function (pos) {
+    return pad_to(pos.r + 1, this.height) + '-' + pad_to(pos.c + 1, this.width + 1);
+  }
+
+  this.cell_ix = function (pos) {
+    return pos.r * this.width + Math.floor(pos.r / 2) + pos.c;
+  }
+
+  this.rev_cell_ix = function(i) {
+    var r2 = Math.floor(i / (2 * this.width + 1));
+    var c2 = i % (2 * this.width + 1);
+    return {r: 2 * r2 + (c2 < this.width ? 0 : 1), c: (c2 < this.width ? c2 : c2 - this.width)};
+  }
+
+  this.num_cells = function () {
+    return this.width * this.height + Math.floor(this.height / 2);
+  }
+
+  this.row_width = function(r) {
+    return this.width + (r % 2 == 0 ? 0 : 1);
+  }
+
+  this.adjacent = function (pos) {
+    var adj = [];
+    for (var r = Math.max(pos.r - 1, 0); r <= Math.min(pos.r + 1, this.height - 1); r++) {
+      if (pos.r == r) {
+        var c_lo = pos.c - 1;
+        var c_hi = pos.c + 1;
+      } else if (pos.r % 2 == 0) {
+        var c_lo = pos.c;
+        var c_hi = pos.c + 1;
+      } else {
+        var c_lo = pos.c - 1;
+        var c_hi = pos.c;
+      }
+      for (var c = Math.max(c_lo, 0); c <= Math.min(c_hi, this.row_width(r) - 1); c++) {
+        if (r != pos.r || c != pos.c) {
+          adj.push({r: r, c: c});
+        }
+      } 
+    }
+    return adj;
+  }
+
+  this.cell_dim = function (canvas) {
+    return Math.min(canvas.height / (.75 * this.height + .25), canvas.width / (Math.sqrt(3.) / 2. * (this.width + 1)));
+  }
+
+  this.geom = function (pos, canvas) {
+    var dim = this.cell_dim(canvas);
+    var span = dim - MARGIN;
+    var center = [Math.sqrt(3.) / 2. * dim * (pos.c + (pos.r % 2 == 0 ? 1 : .5)), dim * (.75 * pos.r + .5)];
+    var fillfunc = function(ctx) {
+      ctx.beginPath();
+      for (var i = 0; i < 6; i++) {
+        var angle = 2*Math.PI / 6. * i;
+        ctx.lineTo(center[0] + .5 * span * Math.sin(angle), center[1] + .5 * span * Math.cos(angle));
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    return {span: span * .8, center: center, fill: fillfunc};
+  }
+
+  this.cell_from_xy = function (p, canvas) {
+    var dim = this.cell_dim(canvas);
+    var dx2 = .25 * Math.sqrt(3.) * dim;
+    var dy3 = .25 * dim;
+    var c2 = Math.floor(p.x / dx2);
+    var r3 = Math.floor(p.y / dy3);
+    if (r3 % 3 == 0) {
+      var r_ = Math.floor(r3 / 3);
+      var mode = (r_ + c2) % 2;
+      var kx = (p.x - c2 * dx2) / dx2;
+      var ky = (p.y - r3 * dy3) / dy3;
+      r3 += ((mode == 0 ? ky > kx : ky > 1. - kx) ? 1 : -1);
+    }
+    var r = Math.floor(r3 / 3);
+    var c = Math.floor((c2 + (r % 2 == 0 ? -1 : 0)) / 2);
+    if (r >= 0 && r < this.height && c >= 0 && c < this.row_width(r)) {
+      return {r: r, c: c};
+    } else {
+      return null;
+    }
+  }
+}
 
 
 function pad(i, n) {
@@ -347,6 +441,10 @@ function pad(i, n) {
   }
   return s;
 }
+
+function pad_to (i, max) {
+  return pad(i, ('' + max).length);
+};
 
 function shuffle(data) {
   var buf = [];
