@@ -2,8 +2,26 @@
 <head>
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
   <script src="minesweeper.js" type="text/javascript"></script>
+  <script src="autoplay.js" type="text/javascript"></script>
 </head>
 <body style="font-family: sans-serif;">
+
+  <style>
+
+.help {
+  font-size: x-small;
+  font-style: italic;
+  color: grey;
+}
+
+#tooltip {
+  background: #ff0;
+  padding: 5px;
+  border: 1px solid #aaa;
+  position: absolute;
+}  
+
+  </style>
 
   <h1>Minesweeper Auto-player</h1>
   <hr>
@@ -22,14 +40,14 @@
         <table>
           <tr>
             <td>
-              <input name="topo" type="radio"> grid<br>
-              <input name="topo" type="radio"> torus<br>
-              <input name="topo" type="radio"> cube (surface)<br>
+              <input name="topo" type="radio" value="grid"> grid<br>
+              <input name="topo" type="radio" value="torus"> torus<br>
+              <input name="topo" type="radio" value="cube2d"> cube (surface)<br>
             </td>
             <td>
-              &nbsp;<input name="topo" type="radio"> cube (3-d)<br>
-              &nbsp;<input name="topo" type="radio"> hexa-grid<br>
-              &nbsp;<input name="topo" type="radio"> grid+1<br>
+              &nbsp;<input name="topo" type="radio" value="cube3d"> cube (3-d)<br>
+              &nbsp;<input name="topo" type="radio" value="hex"> hexa-grid<br>
+              &nbsp;<input name="topo" type="radio" value="grid2"> grid+1<br>
             </td>
           </tr>
         </table>
@@ -42,19 +60,17 @@
       <td><input id="width" type="text" style="width: 6em;">&nbsp;&nbsp;</td>
       <td>Height:&nbsp;&nbsp;</td>
       <td><input id="height" type="text" style="width: 6em;">&nbsp;&nbsp;</td>
-      <td>Depth:&nbsp;&nbsp;</td>
+      <td><span id="depth_lab">Depth:&nbsp;&nbsp;</span></td>
       <td><input id="depth" type="text" style="width: 6em;"></td>
     </tr>
     <tr>
       <td>Mines:&nbsp;&nbsp;</td>
-      <td><input id="depth" type="text" style="width: 6em;"></td>
-      <td colspan="4" style="color: grey; font-size: x-small; font-style: italic;">
-        total # of mines OR<br>per-cell probability of a mine 0.0-1.0 (total # will vary) 
-      </td>
+      <td><input id="mines" type="text" style="width: 6em;"></td>
+      <td colspan="4" class="help">total # of mines OR<br>per-cell probability of a mine 0.0-1.0 (total # will vary)</td>
     </tr>
     <tr>
-      <td colspan="4"><input type="checkbox"> 1<sup>st</sup> click is safe</td>
-      <td colspan="2" align="right"><a href="#"><b>make board<b></a></td>
+      <td colspan="4"><input id="first_safe" type="checkbox" checked="true"> 1<sup>st</sup> click is safe</td>
+      <td colspan="2" align="right"><a id="make" href="#"><b>make board<b></a></td>
     </tr>
   </table>
 
@@ -77,7 +93,7 @@
       <td align="right"><a href="#"><b>next move</b></a></td>
     </tr>
     <tr>
-      <td align="right" colspan="2"><span style="color: grey; font-size: x-small; font-style: italic;">(or press enter)</span></td>
+      <td align="right" colspan="2" class="help">(or press enter)</td>
     </tr>
   </table>
 
@@ -97,7 +113,7 @@
     This demo requires HTML canvas
   </canvas>
 
-  <div id="tooltip" style="background: #ff0; padding: 5px; border: 1px solid #ddd; position: absolute;">I'm only over the box!</div>
+  <div id="tooltip">-.--%</div>
 
 </body>
 </html>
