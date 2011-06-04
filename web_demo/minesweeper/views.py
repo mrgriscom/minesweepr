@@ -6,13 +6,13 @@ import minesweeper.lib.minesweeper as mnsw
 @csrf_exempt
 def api_solve(request):
     payload = json.loads(request.raw_post_data)
-    result = handle(payload)
+    result = minesweeper_solve(payload)
     return HttpResponse(json.dumps(result), 'text/json')
 
-def handle (payload):
-    if 'mine_prob' in payload:
+def minesweeper_solve(payload):
+    try:
         mine_p = payload['mine_prob']
-    else:
+    except KeyError:
         mine_p = mnsw.MineCount(payload['total_cells'], payload['total_mines'])
 
     rules = [mnsw.Rule(r['num_mines'], r['cells']) for r in payload['rules']]
