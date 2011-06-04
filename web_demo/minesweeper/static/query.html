@@ -1,0 +1,35 @@
+<html>
+<head>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
+  <script src="minesweeper.js" type="text/javascript"></script>
+</head>
+<body style="font-family: sans-serif;">
+
+  <style>
+    .help {
+      font-size: small;
+      color: grey;
+      font-style: italic;
+    }
+  </style>
+
+  <table>
+    <tr>
+      <td>Dimensions:&nbsp;&nbsp;</td>
+      <td><input id="mines" type="text"></td>
+      <td class="help">(30x16, 10 10, etc.)</td>
+    </tr>
+    <tr>
+      <td>Mines:&nbsp;&nbsp;</td>
+      <td><input id="dim" type="text"></td>
+      <td class="help">(total # of mines OR probability that unknown cell is a mine [0., 1.])</td>
+    </tr>
+  </table>
+  <br>
+
+  Rulespec:<br>
+  <textarea id="rules" style="width: 40em; height: 25em;"></textarea>
+
+
+</body>
+</html>
