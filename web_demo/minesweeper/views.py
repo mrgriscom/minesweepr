@@ -4,6 +4,8 @@ import json
 import minesweeper.lib.minesweeper as mnsw
 
 @csrf_exempt
+# TODO: since solving uses an exponential-time algorithm, requests can easily DoS
+# the CPU; impose a resource limit somehow?
 def api_solve(request):
     payload = json.loads(request.raw_post_data)
     result = minesweeper_solve(payload)

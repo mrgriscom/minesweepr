@@ -370,12 +370,13 @@ function make_board (w, h, mine_factor, mine_mode) {
 }
 
 function solve(board, url, callback) {
-  $.post('/', JSON.stringify(board.game_state()), function (data) {
-      if (data['_other'] == null && board.mine_prob != null) {
-        data['_other'] = board.mine_prob;
+  $.post(url, JSON.stringify(board.game_state()), function (data) {
+      var solution = data.solution;
+      if (solution['_other'] == null && board.mine_prob != null) {
+        solution['_other'] = board.mine_prob;
       }
       
-      callback(data, board);
+      callback(solution, board);
     }, "json");
 }
 
@@ -431,9 +432,11 @@ function go(board, canvas) {
   var survived = action(board, current_probs, canvas);
   update_stats();
   if (survived) {
-    solve(board, 'http://127.0.0.1:4444', function (data, board) { display_solution(data, board, canvas); });
+    solve(board, SOLVE_URL, function (data, board) { display_solution(data, board, canvas); });
   }
 }
+
+SOLVE_URL = '/api/minesweeper_solve/';
 
 $(document).ready(function(){
     //  netscape.security.PrivilegeManager.enablePrivilege("UniversalBrowserRead");
@@ -446,7 +449,7 @@ $(document).ready(function(){
     remaining_mines = board.num_mines || '??';
     total_risk = 0.;
 
-    solve(board, 'http://127.0.0.1:4444', function (data, board) { display_solution(data, board, canvas); });
+    solve(board, SOLVE_URL, function (data, board) { display_solution(data, board, canvas); });
 
     $('#go').click(function () { go(board, canvas); });
 
