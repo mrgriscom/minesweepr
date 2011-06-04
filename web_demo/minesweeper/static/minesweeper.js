@@ -1,20 +1,75 @@
 
-
-
-function Board (width, height) {
+function GridTopo (width, height) {
   this.width = width;
   this.height = height;
+
+  this.cell_name = function (pos) {
+    var pad_to = function (i, max) { return pad(i, ('' + max).length); };
+    return pad_to(pos.r, this.height) + '-' + pad_to(pos.c, this.width);
+  }
+
+  this.cell_ix = function (pos) {
+    return pos.r * this.width + pos.c;
+  }
+
+  this.rev_cell_ix = function(i) {
+    return {r: Math.floor(i / this.width), c: i % this.width};
+  }
+
+  this.num_cells = function () {
+    return this.width * this.height;
+  }
+
+  this.adjacent = function (pos) {
+    var adj = [];
+    for (var r = Math.max(pos.r - 1, 0); r <= Math.min(pos.r + 1, height - 1); r++) {
+      for (var c = Math.max(pos.c - 1, 0); c <= Math.min(pos.c + 1, width - 1); c++) {
+        if (r != pos.r || c != pos.c) {
+          adj.push({r: r, c: c});
+        }
+      }
+    }
+    return adj;
+  }
+
+  this.cell_dim = function (canvas) {
+    return Math.min(canvas.height / this.height, canvas.width / this.width);
+  }
+
+  this.geom = function (pos, canvas) {
+    var dim = this.cell_dim(canvas);
+    var cell_width = dim - MARGIN;
+    var corner = [pos.c * dim, pos.r * dim];
+    var center = [corner[0] + .5 * cell_width, corner[1] + .5 * cell_width];
+    return {span: cell_width, corner: corner, center: center};
+  }
+
+  this.cell_from_xy = function (p, canvas) {
+    var dim = this.cell_dim(canvas);
+    var r = Math.floor(p.y / dim);
+    var c = Math.floor(p.x / dim);
+    if (r >= 0 && r < this.height && c >= 0 && c < this.width) {
+      var g = this.geom(r, c, canvas);
+      var inside = (p.x - g.corner[0] < g.span && p.y - g.corner[1] < g.span);
+      return {r: r, c: c, inside: inside};
+    } else {
+      return null;
+    }
+  }
+}
+
+
+function Board (topology) {
+  this.topology = topology;
   this.cells = [];
 
   this.populate_n = function (num_mines) {
     this.num_mines = num_mines;
-
     this.init(this.n_dist());
   }
 
   this.populate_p = function (mine_prob) {
     this.mine_prob = mine_prob;
-
     this.init(this.p_dist());
   }
 
@@ -22,11 +77,11 @@ function Board (width, height) {
     for (var i = 0; i < mine_dist.length; i++) {
       this.cells.push(new Cell(null, mine_dist[i] ? 'mine' : null, false, false));
     }
-    this.for_each_cell(function (r, c, cell, board) {
-        cell.name = board.cell_name(r, c);
+    this.for_each_cell(function (pos, cell, board) {
+        cell.name = board.topology.cell_name(pos);
         if (cell.state != 'mine') {
           var count = 0;
-          board.for_each_neighbor(r, c, function (r, c, neighb, board) {
+          board.for_each_neighbor(pos, function (pos, neighb, board) {
               if (neighb.state == 'mine') {
                 count++;
               }
@@ -36,8 +91,8 @@ function Board (width, height) {
       });
   }
 
-  this.uncover = function (r, c) {
-    var cell = this.get_cell(r, c);
+  this.uncover = function (pos) {
+    var cell = this.get_cell(pos);
     if (!cell.visible) {
       cell.visible = true;
 
@@ -45,8 +100,8 @@ function Board (width, height) {
         return false;
       } else {
         if (cell.state == 0) {
-          this.for_each_neighbor(r, c, function (r, c, neighb, board) {
-              board.uncover(r, c);
+          this.for_each_neighbor(pos, function (pos, neighb, board) {
+              board.uncover(pos);
             });
         }
         return true;
@@ -54,32 +109,16 @@ function Board (width, height) {
     }
   }
 
-  this.flag = function (r, c) {
-    this.get_cell(r, c).flagged = true;
+  this.flag = function (pos) {
+    this.get_cell(pos).flagged = true;
   }
 
-  this.cell_ix = function (r, c) {
-    return r * this.width + c;
-  }
-
-  this.get_cell = function (r, c) {
-    return this.cells[this.cell_ix(r, c)];
+  this.get_cell = function (pos) {
+    return this.cells[this.topology.cell_ix(pos)];
   }
 
   this.num_cells = function () {
-    return this.width * this.height;
-  }
-
-  this.adjacent = function (r, c) {
-    var adj = [];
-    for (var _r = Math.max(r - 1, 0); _r <= Math.min(r + 1, height - 1); _r++) {
-      for (var _c = Math.max(c - 1, 0); _c <= Math.min(c + 1, width - 1); _c++) {
-        if (_r != r || _c != c) {
-          adj.push({ix: {r: _r, c: _c}, cell: this.get_cell(_r, _c)});
-        }
-      }
-    }
-    return adj;
+    return this.topology.num_cells();
   }
 
   this.n_dist = function () {
@@ -99,78 +138,34 @@ function Board (width, height) {
     return m;
   }
 
-  this.cell_name = function (r, c) {
-    var pad_to = function (i, max) { return pad(i, ('' + max).length); };
-    return pad_to(r, this.height) + '-' + pad_to(c, this.width);
-  }
-
   this.safe_cell = function () {
     var c = [];
-    this.for_each_cell(function (r, c, cell, board) {
+    this.for_each_cell(function (pos, cell, board) {
         if (cell.state != 'mine') {
-          c.push([r, c]);
+          c.push(pos);
         }
       });
-    return c[Math.floor(Math.random() * c.length)];
-  }
-
-  this.cell_dim = function (canvas) {
-    return Math.min(canvas.height / this.height, canvas.width / this.width);
-  }
-
-  this.render = function (canvas, params) {
-    params = params || {};
-
-    this.for_each_cell(function (r, c, cell, board) {
-        cell.render(board.geom(r, c, canvas), canvas.getContext('2d'), params);
-      });
-  }
-
-  this.render_overlay = function(r, c, fill, canvas) {
-    this.get_cell(r, c).render_overlay(this.geom(r, c, canvas), fill, canvas.getContext('2d'));
-  }
-
-  this.geom = function (r, c, canvas) {
-    var dim = this.cell_dim(canvas);
-    var cell_width = dim - MARGIN;
-    var corner = [c * dim, r * dim];
-    var center = [corner[0] + .5 * cell_width, corner[1] + .5 * cell_width];
-    return {span: cell_width, corner: corner, center: center};
-  }
-
-  this.cell_from_xy = function (p, canvas) {
-    var dim = this.cell_dim(canvas);
-    var r = Math.floor(p.y / dim);
-    var c = Math.floor(p.x / dim);
-    if (r >= 0 && r < this.height && c >= 0 && c < this.width) {
-      var g = this.geom(r, c, canvas);
-      var inside = (p.x - g.corner[0] < g.span && p.y - g.corner[1] < g.span);
-      return {r: r, c: c, inside: inside};
-    } else {
-      return null;
-    }
+    return choose_rand(c);
   }
 
   this.for_each_cell = function (func) {
-    for (var r = 0; r < this.height; r++) {
-      for (var c = 0; c < this.width; c++) {
-        func(r, c, this.get_cell(r, c), this);
-      }
+    for (var i = 0; i < this.cells.length; i++) {
+      func(this.topology.rev_cell_ix(i), this.cells[i], this);
     }
   }
 
-  this.for_each_neighbor = function (r, c, func) {
-    var adj = this.adjacent(r, c);
+  this.for_each_neighbor = function (pos, func) {
+    var adj = this.topology.adjacent(pos);
     for (var i = 0; i < adj.length; i++) {
-      var neighb = adj[i];
-      func(neighb.ix.r, neighb.ix.c, neighb.cell, this);
+      var neighb_pos = adj[i];
+      func(neighb_pos, this.get_cell(neighb_pos), this);
     }
   }
 
   this.for_each_name = function (names, func) {
-    this.for_each_cell(function (r, c, cell, board) {
+    this.for_each_cell(function (pos, cell, board) {
         if (names.indexOf(cell.name) != -1) {
-          func(r, c, cell, board);
+          func(pos, cell, board);
         }
       });
   }
@@ -196,7 +191,7 @@ function Board (width, height) {
       }
     }
 
-    this.for_each_cell(function (r, c, cell, board) {
+    this.for_each_cell(function (pos, cell, board) {
         if (cell.state == 'mine' && cell.flagged) {
           num_known_mines += 1;
           if (everything_mode) {
@@ -207,7 +202,7 @@ function Board (width, height) {
           if (cell.state > 0) {
             var cells_of_interest = [];
             var on_frontier = false;
-            board.for_each_neighbor(r, c, function (r, c, neighbor, board) {
+            board.for_each_neighbor(pos, function (pos, neighbor, board) {
                 if (!neighbor.visible || neighbor.state == 'mine') {
                   cells_of_interest.push(neighbor);
                   if (neighbor.state == 'mine' && neighbor.flagged) {
@@ -222,7 +217,7 @@ function Board (width, height) {
               rules.push(mk_rule(cell.state, cells_of_interest));
             }
           } else {
-            board.for_each_neighbor(r, c, function (r, c, neighbor, board) {
+            board.for_each_neighbor(pos, function (pos, neighbor, board) {
                 add(zero_cells, neighbor);
               });
           }
@@ -245,6 +240,22 @@ function Board (width, height) {
       state.mine_prob = this.mine_prob;
     }
     return state;
+  }
+
+  this.render = function (canvas, params) {
+    params = params || {};
+
+    this.for_each_cell(function (pos, cell, board) {
+        cell.render(board.topology.geom(pos, canvas), canvas.getContext('2d'), params);
+      });
+  }
+
+  this.render_overlay = function(pos, fill, canvas) {
+    this.get_cell(pos).render_overlay(this.topology.geom(pos, canvas), fill, canvas.getContext('2d'));
+  }
+
+  this.cell_from_xy = function(p, canvas) {
+    return this.topology.cell_from_xy(p, canvas);
   }
 }
 
@@ -327,5 +338,7 @@ function shuffle(data) {
   }    
 }
 
-
+function choose_rand(data) {
+  return data[Math.floor(Math.random() * data.length)];
+}
 

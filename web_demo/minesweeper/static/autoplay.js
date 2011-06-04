@@ -1,5 +1,5 @@
 
-
+/*
 $(document).ready(function() {
     $('input[name="topo"]').change(function(e) {
         var _3d = ['cube3d'];
@@ -20,12 +20,13 @@ $(document).ready(function() {
 
     selectChoice($('input[name="topo"][value="grid"]'));
   });
-
+*/
 function selectChoice(elem) {
   elem.attr('checked', true);
   elem.trigger('change');
 }
 
+/*
 function make_board() {
   var topo_type = $('input[name="topo"]:checked').val();
   var width = +$('#width').val();
@@ -36,6 +37,7 @@ function make_board() {
 
   console.log('making');
 }
+*/
 
 function mousePos(evt, elem) {
   return {x: evt.pageX - elem.offsetLeft, y: evt.pageY - elem.offsetTop};
@@ -49,37 +51,35 @@ function apply(board, cell_probs, func) {
   for (var name in cell_probs) {
     names.push(name);
   }
-  board.for_each_name(names, function (r, c, cell, board) {
-      func(r, c, cell, cell_probs[cell.name], board);
+  board.for_each_name(names, function (pos, cell, board) {
+      func(pos, cell, cell_probs[cell.name], board);
     });
   
   var other_prob = cell_probs['_other'];
   if (other_prob != null) {
-    board.for_each_cell(function (r, c, cell, board) {
+    board.for_each_cell(function (pos, cell, board) {
         if (!cell.visible && names.indexOf(cell.name) == -1) {
-          func(r, c, cell, other_prob, board);
+          func(pos, cell, other_prob, board);
         }
       });
   }
 }
 
 function render_overlays (board, cell_probs, canvas) {
-  apply(board, cell_probs, function (r, c, cell, prob, board) {
+  apply(board, cell_probs, function (pos, cell, prob, board) {
       if (!cell.flagged) {
-        board.render_overlay(r, c, prob_shade(prob), canvas);
+        board.render_overlay(pos, prob_shade(prob), canvas);
       }
     });
 }
 
-/*
 function make_board (w, h, mine_factor, mine_mode) {
   mine_mode = mine_mode || (mine_factor >= 1. ? 'count' : 'prob');
 
-  board = new Board(w, h);
+  board = new Board(new GridTopo(w, h));
   board[{'count': 'populate_n', 'prob': 'populate_p'}[mine_mode]](mine_factor);
   return board;
 }
-*/
 
 function solve(board, url, callback) {
   $.post(url, JSON.stringify(board.game_state()), function (data) {
@@ -102,17 +102,17 @@ function action(board, cell_probs, canvas) {
   var guesses = [];
   var min_prob = 1.;
   var survived = true;
-  apply(board, cell_probs, function (r, c, cell, prob, board) {
+  apply(board, cell_probs, function (pos, cell, prob, board) {
       if (prob < EPSILON) {
-        board.uncover(r, c);
+        board.uncover(pos);
         must_guess = false;
       } else if (prob > 1. - EPSILON) {
         if (!cell.flagged && board.num_mines) {
           remaining_mines--;
         }
-        board.flag(r, c);
+        board.flag(pos);
       } else {
-        guesses.push({r: r, c: c, p: prob});
+        guesses.push({pos: pos, p: prob});
         min_prob = Math.min(min_prob, prob);
       }
     });
@@ -124,12 +124,10 @@ function action(board, cell_probs, canvas) {
       }
     }
     if (best_guesses.length) {
-      // only occurs at the very end when all there is left to do is flag remaining mines
-      shuffle(best_guesses);
-      var guess = best_guesses[0];
-      survived = board.uncover(guess.r, guess.c);
+      var guess = choose_rand(best_guesses);
+      survived = board.uncover(guess.pos);
       total_risk = 1. - (1. - total_risk) * (1. - min_prob);
-    }
+    } // else only occurs at the very end when all there is left to do is flag remaining mines
   }
   board.render(canvas);
   return survived;
@@ -150,7 +148,7 @@ function go(board, canvas) {
 
 SOLVE_URL = '/api/minesweeper_solve/';
 
-/*
+
 $(document).ready(function(){
     //  netscape.security.PrivilegeManager.enablePrivilege("UniversalBrowserRead");
 
@@ -164,7 +162,7 @@ $(document).ready(function(){
 
     solve(board, SOLVE_URL, function (data, board) { display_solution(data, board, canvas); });
 
-    $('#go').click(function () { go(board, canvas); });
+    $('#step').click(function (e) { go(board, canvas); e.preventDefault(); });
 
     $("#tooltip").hide();
     $("#gameboard").mousemove(function(e){
@@ -173,7 +171,7 @@ $(document).ready(function(){
 
         var prob = null;
         if (pos) {
-          var cell = board.get_cell(pos.r, pos.c);
+          var cell = board.get_cell(pos);
           prob = current_probs[cell.name];
           if (prob == null && !cell.visible && !cell.flagged) {
             prob = current_probs['_other'];
@@ -194,4 +192,3 @@ $(document).ready(function(){
         $("#tooltip").hide();
       });
   });
-*/
