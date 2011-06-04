@@ -33,7 +33,8 @@ function GridTopo (width, height) {
   }
 
   this.cell_dim = function (canvas) {
-    return Math.min(canvas.height / this.height, canvas.width / this.width);
+    var dim = Math.min(canvas.height / this.height, canvas.width / this.width);
+    return (dim >= 10. ? Math.floor(dim) : dim);
   }
 
   this.geom = function (pos, canvas) {

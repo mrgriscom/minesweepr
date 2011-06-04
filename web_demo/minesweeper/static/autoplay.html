@@ -21,6 +21,9 @@
   position: absolute;
 }  
 
+td {
+  font-size: small;
+}
   </style>
 
   <h1>Minesweeper Auto-player</h1>
@@ -69,8 +72,8 @@
       <td colspan="4" class="help">total # of mines OR<br>per-cell probability of a mine 0.0-1.0 (total # will vary)</td>
     </tr>
     <tr>
-      <td colspan="4"><input id="first_safe" type="checkbox" checked="true"> 1<sup>st</sup> click is safe</td>
-      <td colspan="2" align="right"><a id="make" href="#"><b>make board<b></a></td>
+      <td colspan="4"><input id="first_safe" type="checkbox"> 1<sup>st</sup> click is safe</td>
+      <td colspan="2" align="right"><a id="start" href="#"><b>start new game<b></a></td>
     </tr>
   </table>
 
@@ -109,7 +112,7 @@
     </tr>
   </table>
 
-  <canvas id="gameboard" width="1200" height="700">
+  <canvas id="game_canvas">
     This demo requires HTML canvas
   </canvas>
 
