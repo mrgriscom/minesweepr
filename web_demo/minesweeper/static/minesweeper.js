@@ -611,17 +611,27 @@ function Cube3dTopo (width, height, depth) {
   }
   
   this.cell_from_xy = function (p, canvas) {
-    return null;
-    /*
-    var dim = this.cell_dim(canvas);
-    var r = Math.floor(p.y / dim);
-    var c = Math.floor(p.x / dim);
-    if (r >= 0 && r < this.height && c >= 0 && c < this.width) {
-      return {r: r, c: c};
-    } else {
-      return null;
+    self = this;
+    var rev_transform = function(x, y, z) {
+      x /= self.scale; y /= self.scale;
+      x -= self.ext.h_max / 2. + z * (self.ext.h_inner + self.h_margin);
+      y -= self.ext.v_max / 2.;
+      x /= Math.sin(self.ISO_TILT);
+      var x_ = x * Math.cos(-self.ISO_ROT) - y * Math.sin(-self.ISO_ROT);
+      var y_ = x * Math.sin(-self.ISO_ROT) + y * Math.cos(-self.ISO_ROT);
+      x = x_; y = y_;
+      x += .5 * self.w;
+      y += .5 * self.h;
+      return {x: Math.floor(x), y: Math.floor(y)};
     }
-    */
+
+    for (var z = 0; z < this.d; z++) {
+      var c = rev_transform(p.x, p.y, z);
+      if (c.x >= 0 && c.x < this.w && c.y >= 0 && c.y < this.h) {
+        return {x: c.x, y: c.y, z: z};
+      }
+    }
+    return null;
   }
 }
 
