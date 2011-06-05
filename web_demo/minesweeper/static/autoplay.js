@@ -55,9 +55,9 @@ function selectChoice(elem) {
   elem.trigger('change');
 }
 
-function parsemine(raw, w, h) {
+function parsemine(raw, w, h, d) {
   if (raw[0] == '*') {
-    return Math.round(w * h * +raw.substring(1) * .01);
+    return Math.round(w * h * d * +raw.substring(1) * .01);
   } else {
     return +raw;
   }
@@ -68,7 +68,7 @@ function new_game() {
   var width = +$('#width').val();
   var height = +$('#height').val();
   var depth = +$('#depth').val();
-  var minespec = parsemine($('#mines').val(), width, height);
+  var minespec = parsemine($('#mines').val(), width, height, topo_type == 'cube3d' ? depth : 1);
   var first_safe = $('#first_safe').attr("checked");
 
   var topo = new_topo(topo_type, width, height, depth);
@@ -94,6 +94,10 @@ function new_topo(type, w, h, d) {
     });
   } else if (type == 'hex') {
     return new HexGridTopo(w, h);
+  } else if (type == 'cube3d') {
+    return new Cube3dTopo(w, h, d);
+  } else if (type == 'cube2d') {
+    return new CubeSurfaceTopo(w, h, d);
   }
 }
 
