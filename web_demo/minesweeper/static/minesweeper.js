@@ -12,7 +12,7 @@ FONT_SCALE_LONG = .8;
 
 EPSILON = 1.0e-6;
 
-function prob_shade (p) {
+function prob_shade (p, best) {
   if (p < EPSILON) {
     return 'rgba(0, 0, 255, .2)';
   } else if (p > 1 - EPSILON) {
@@ -21,7 +21,7 @@ function prob_shade (p) {
     var MIN_ALPHA = .05;
     var MAX_ALPHA = .8;
     var alpha = MIN_ALPHA * (1 - p) + MAX_ALPHA * p;
-    return 'rgba(0, 255, 0, ' + alpha + ')';
+    return 'rgba(' + (best ? 255 : 0) + ', 255, 0, ' + alpha + ')';
   }
 }
 
@@ -442,8 +442,8 @@ function CubeSurfaceTopo (width, height, depth) {
   this.height = height;
   this.depth = depth;
 
-  //u=0, r=1, d=2, l=3
-  //0=0, 90=1, 180=2, 270=3
+  //direction: u=0, r=1, d=2, l=3
+  //orientation: 0=0, 90=1, 180=2, 270=3
   this.face_adj = [
     {f0: 1, dir: 2, f1: 2, orient: 0},
     {f0: 1, dir: 1, f1: 3, orient: 3},

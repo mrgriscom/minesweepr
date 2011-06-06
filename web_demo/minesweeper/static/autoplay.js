@@ -2,7 +2,6 @@
 SOLVER_URL = '/api/minesweeper_solve/';
 
 $(document).ready(function() {
-    canvas = $('#game_canvas')[0];
     $(window).resize(resize_canvas);
     resize_canvas();
 
@@ -24,7 +23,7 @@ $(document).ready(function() {
       });
 
     $('#step').click(function (e) {
-        go(board, canvas);
+        game.move();
         e.preventDefault();
       });
 
@@ -36,10 +35,6 @@ $(document).ready(function() {
 
     set_defaults();
     new_game();
-
-
-    remaining_mines = board.num_mines || '??';
-    total_risk = 0.;
   });
 
 function set_defaults() {
@@ -72,11 +67,10 @@ function new_game() {
 
   var topo = new_topo(topo_type, width, height, depth);
   var minespec = parsemine($('#mines').val(), topo.num_cells());
-  board = new_board(topo, minespec);
-  var game = new GameSession(board, first_safe);
+  var board = new_board(topo, minespec);
+  game = new GameSession(board, $('#game_canvas')[0], first_safe);
 
-  board.render(canvas);
-  solve(board, SOLVER_URL, function (data, board) { display_solution(data, board, canvas); });
+  game.start();
 }
 
 function new_topo(type, w, h, d) {
@@ -109,114 +103,147 @@ function new_board(topo, mine_factor, mine_mode) {
   return board;
 }
 
-function GameSession (board, first_safe) {
+function GameSession (board, canvas, first_safe) {
   this.board = board;
+  this.canvas = canvas;
   this.first_safe = first_safe;
+  this.cell_probs = [];
 
+  this.start = function() {
+    this.remaining_mines = this.board.num_mines;
+    this.total_risk = 0.;
+    this.first_move = true;
+    this.status = 'in_progress';
 
+    this.update_stats();
+    this.board.render(this.canvas);
+    this.solve(SOLVER_URL);
+  };
 
-}
+  this.move = function() {
+    //check if move is makeable
 
+    //make move
+    //update stats
+    //get solution
+    //display solution
 
-
-
-
-
-
-
-
-function apply(board, cell_probs, func) {
-  var names = [];
-  for (var name in cell_probs) {
-    names.push(name);
+    var survived = this.action();
+    this.update_stats();
+    if (survived) {
+      this.solve(SOLVER_URL);
+    }
   }
-  board.for_each_name(names, function (pos, cell, board) {
-      func(pos, cell, cell_probs[cell.name], board);
-    });
-  
-  var other_prob = cell_probs['_other'];
-  if (other_prob != null) {
-    board.for_each_cell(function (pos, cell, board) {
-        if (!cell.visible && names.indexOf(cell.name) == -1) {
-          func(pos, cell, other_prob, board);
+
+  this.apply = function(func) {
+    var names = [];
+    for (var name in this.cell_probs) {
+      names.push(name);
+    }
+    var self = this;
+    this.board.for_each_name(names, function (pos, cell, board) {
+        func(pos, cell, self.cell_probs[cell.name], board);
+      });
+    
+    var other_prob = this.cell_probs['_other'];
+    if (other_prob != null) {
+      this.board.for_each_cell(function (pos, cell, board) {
+          if (!cell.visible && names.indexOf(cell.name) == -1) {
+            func(pos, cell, other_prob, board);
+          }
+        });
+    }
+  }
+
+  this.render_overlays = function() {
+    var self = this;
+    this.apply(function (pos, cell, prob, board) {
+        if (!cell.flagged) {
+          board.render_overlay(pos, prob_shade(prob), self.canvas);
         }
       });
   }
-}
 
-function render_overlays (board, cell_probs, canvas) {
-  apply(board, cell_probs, function (pos, cell, prob, board) {
-      if (!cell.flagged) {
-        board.render_overlay(pos, prob_shade(prob), canvas);
-      }
-    });
-}
+  this.solve = function(url) {
+    var self = this;
+    this.solve_(url, function (data, board) {
+        self.cell_probs = data;
+        self.display_solution();
+      });
+  }
 
-
-function solve(board, url, callback) {
-  $.post(url, JSON.stringify(board.game_state()), function (data) {
-      var solution = data.solution;
-      if (solution['_other'] == null && board.mine_prob != null) {
-        solution['_other'] = board.mine_prob;
-      }
-      
-      callback(solution, board);
-    }, "json");
-}
-
-function display_solution(cell_probs, board, canvas) {
-  render_overlays(board, cell_probs, canvas);
-  current_probs = cell_probs;
-}
-
-function action(board, cell_probs, canvas) {
-  var must_guess = true;
-  var guesses = [];
-  var min_prob = 1.;
-  var survived = true;
-  apply(board, cell_probs, function (pos, cell, prob, board) {
-      if (prob < EPSILON) {
-        board.uncover(pos);
-        must_guess = false;
-      } else if (prob > 1. - EPSILON) {
-        if (!cell.flagged && board.num_mines) {
-          remaining_mines--;
+  this.solve_ = function(url, callback) {
+    var self = this;
+    $.post(url, JSON.stringify(this.board.game_state()), function (data) {
+        var solution = data.solution;
+        if (solution['_other'] == null && self.board.mine_prob != null) {
+          solution['_other'] = self.board.mine_prob;
         }
-        board.flag(pos);
-      } else {
-        guesses.push({pos: pos, p: prob});
-        min_prob = Math.min(min_prob, prob);
+        
+        callback(solution);
+      }, "json");
+  }
+
+  this.display_solution = function() {
+    this.render_overlays();
+  }
+
+  this.action = function() {
+    var must_guess = true;
+    var guesses = [];
+    var min_prob = 1.;
+    var survived = true;
+    var self = this;
+    this.apply(function (pos, cell, prob, board) {
+        if (prob < EPSILON) {
+          board.uncover(pos);
+          must_guess = false;
+        } else if (prob > 1. - EPSILON) {
+          if (!cell.flagged && board.num_mines) {
+            self.remaining_mines--;
+          }
+          board.flag(pos);
+        } else {
+          guesses.push({pos: pos, p: prob});
+          min_prob = Math.min(min_prob, prob);
+        }
+      });
+    if (must_guess) {
+      var best_guesses = [];
+      for (var i = 0; i < guesses.length; i++) {
+        if (guesses[i].p < min_prob + EPSILON) {
+          best_guesses.push(guesses[i]);
+        }
       }
-    });
-  if (must_guess) {
-    var best_guesses = [];
-    for (var i = 0; i < guesses.length; i++) {
-      if (guesses[i].p < min_prob + EPSILON) {
-        best_guesses.push(guesses[i]);
-      }
+      if (best_guesses.length) {
+        var guess = choose_rand(best_guesses);
+        survived = this.board.uncover(guess.pos);
+        this.total_risk = 1. - (1. - this.total_risk) * (1. - min_prob);
+      } // else only occurs at the very end when all there is left to do is flag remaining mines
     }
-    if (best_guesses.length) {
-      var guess = choose_rand(best_guesses);
-      survived = board.uncover(guess.pos);
-      total_risk = 1. - (1. - total_risk) * (1. - min_prob);
-    } // else only occurs at the very end when all there is left to do is flag remaining mines
+    this.board.render(this.canvas);
+    return survived;
   }
-  board.render(canvas);
-  return survived;
+
+  this.update_stats = function() {
+    $('#num_mines').text(this.remaining_mines || '??');
+    $('#risk').text(fmt_pct(this.total_risk));
+  }
+
+
+  //re-size
+
+  //xy => cell
 }
 
-function update_stats() {
-  $('#num_mines').text(remaining_mines);
-  $('#risk').text(fmt_pct(total_risk));
-}
 
-function go(board, canvas) {
-  var survived = action(board, current_probs, canvas);
-  update_stats();
-  if (survived) {
-    solve(board, SOLVER_URL, function (data, board) { display_solution(data, board, canvas); });
-  }
-}
+
+
+
+
+
+
+
 
 
 function mousePos(evt, elem) {
@@ -225,20 +252,20 @@ function mousePos(evt, elem) {
 
 var cellname_in_tooltip = false;
 function prob_tooltip(e) {
-  var coord = mousePos(e, canvas);
-  var pos = board.cell_from_xy(coord, canvas);
+  var coord = mousePos(e, game.canvas);
+  var pos = game.board.cell_from_xy(coord, game.canvas);
 
   var show = false;
   if (pos) {
-    var cell = board.get_cell(pos);
-    var prob = current_probs[cell.name];
+    var cell = game.board.get_cell(pos);
+    var prob = game.cell_probs[cell.name];
     if (prob == null) {
       if (cell.visible) {
         prob = 0.;
       } else if (cell.flagged) {
         prob = 1.;
       } else {
-        prob = current_probs['_other'];
+        prob = game.cell_probs['_other'];
       }
     }
 
@@ -257,6 +284,7 @@ function prob_tooltip(e) {
 }
 
 function resize_canvas() {
+  var canvas = $('#game_canvas')[0];
   canvas.width = Math.max(window.innerWidth - 30, 400);
   canvas.height = Math.max(window.innerHeight - 300, 300);
   // re-render
