@@ -7,7 +7,7 @@ $(document).ready(function() {
     resize_canvas();
 
     $('input[name="topo"]').change(function(e) {
-        var _3d = ['cube3d'];
+        var _3d = ['cube3d', 'cube2d'];
         var selected = $(e.target).val();
         if (_3d.indexOf(selected) != -1) {
           $('#depth').show();
@@ -55,9 +55,9 @@ function selectChoice(elem) {
   elem.trigger('change');
 }
 
-function parsemine(raw, w, h, d) {
+function parsemine(raw, surface_area) {
   if (raw[0] == '*') {
-    return Math.round(w * h * d * +raw.substring(1) * .01);
+    return Math.round(surface_area * +raw.substring(1) * .01);
   } else {
     return +raw;
   }
@@ -68,10 +68,10 @@ function new_game() {
   var width = +$('#width').val();
   var height = +$('#height').val();
   var depth = +$('#depth').val();
-  var minespec = parsemine($('#mines').val(), width, height, topo_type == 'cube3d' ? depth : 1);
   var first_safe = $('#first_safe').attr("checked");
 
   var topo = new_topo(topo_type, width, height, depth);
+  var minespec = parsemine($('#mines').val(), topo.num_cells());
   board = new_board(topo, minespec);
   var game = new GameSession(board, first_safe);
 
@@ -223,25 +223,34 @@ function mousePos(evt, elem) {
   return {x: evt.pageX - elem.offsetLeft, y: evt.pageY - elem.offsetTop};
 }
 
+var cellname_in_tooltip = false;
 function prob_tooltip(e) {
   var coord = mousePos(e, canvas);
   var pos = board.cell_from_xy(coord, canvas);
 
-  var prob = null;
+  var show = false;
   if (pos) {
     var cell = board.get_cell(pos);
-    prob = current_probs[cell.name];
-    if (prob == null && !cell.visible && !cell.flagged) {
-      prob = current_probs['_other'];
+    var prob = current_probs[cell.name];
+    if (prob == null) {
+      if (cell.visible) {
+        prob = 0.;
+      } else if (cell.flagged) {
+        prob = 1.;
+      } else {
+        prob = current_probs['_other'];
+      }
     }
+
+    show = (cellname_in_tooltip || (prob > EPSILON && prob < 1. - EPSILON));
   }
-  if (prob > EPSILON && prob < 1. - EPSILON) {
+  if (show) {
     $("#tooltip").show();
     $("#tooltip").css({
         top: (e.pageY - 15) + "px",
         left: (e.pageX + 15) + "px"
       });
-    $('#tooltip').text(fmt_pct(prob));
+    $('#tooltip').text((cellname_in_tooltip ? cell.name + ' :: ' : '') + fmt_pct(prob));
   } else {
     $('#tooltip').hide();
   }

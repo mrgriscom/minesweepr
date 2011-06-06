@@ -117,9 +117,9 @@ function Board (topology) {
   }
 
   this.for_each_cell = function (func) {
-    for (var i = 0; i < this.cells.length; i++) {
-      func(this.topology.rev_cell_ix(i), this.cells[i], this);
-    }
+    this.topology.for_each_index(this, function(ix, board) {
+        func(ix, board.get_cell(ix), board);
+      });
   }
 
   this.for_each_neighbor = function (pos, func) {
@@ -280,8 +280,10 @@ function GridTopo (width, height, wrap, adjfunc) {
     return pos.r * this.width + pos.c;
   }
 
-  this.rev_cell_ix = function(i) {
-    return {r: Math.floor(i / this.width), c: i % this.width};
+  this.for_each_index = function(board, do_) {
+    this.for_range({r: 0, c: 0}, Math.max(this.width, this.height), false, function(r, c) {
+        do_({r: r, c: c}, board);
+      });
   }
 
   this.num_cells = function () {
@@ -354,10 +356,12 @@ function HexGridTopo (width, height) {
     return pos.r * this.width + Math.floor(pos.r / 2) + pos.c;
   }
 
-  this.rev_cell_ix = function(i) {
-    var r2 = Math.floor(i / (2 * this.width + 1));
-    var c2 = i % (2 * this.width + 1);
-    return {r: 2 * r2 + (c2 < this.width ? 0 : 1), c: (c2 < this.width ? c2 : c2 - this.width)};
+  this.for_each_index = function(board, do_) {
+    for (var r = 0; r < this.height; r++) {
+      for (var c = 0; c < this.row_width(r); c++) {
+        do_({r: r, c: c}, board);
+      }
+    }
   }
 
   this.num_cells = function () {
@@ -433,84 +437,183 @@ function HexGridTopo (width, height) {
   }
 }
 
-/*
 function CubeSurfaceTopo (width, height, depth) {
   this.width = width;
   this.height = height;
   this.depth = depth;
 
+  //u=0, r=1, d=2, l=3
+  //0=0, 90=1, 180=2, 270=3
+  this.face_adj = [
+    {f0: 1, dir: 2, f1: 2, orient: 0},
+    {f0: 1, dir: 1, f1: 3, orient: 3},
+    {f0: 2, dir: 2, f1: 4, orient: 1},
+    {f0: 2, dir: 1, f1: 3, orient: 0},
+    {f0: 3, dir: 2, f1: 4, orient: 0},
+    {f0: 3, dir: 1, f1: 5, orient: 3},
+    {f0: 4, dir: 2, f1: 6, orient: 1},
+    {f0: 4, dir: 1, f1: 5, orient: 0},
+    {f0: 5, dir: 2, f1: 6, orient: 0},
+    {f0: 5, dir: 1, f1: 1, orient: 3},
+    {f0: 6, dir: 2, f1: 2, orient: 1},
+    {f0: 6, dir: 1, f1: 1, orient: 0}
+  ];
+                
   this.cell_name = function (pos) {
     return pos.face + '-' + pad_to(pos.r + 1, this.height) + '-' + pad_to(pos.c + 1, this.width);
   }
 
-  //
   this.cell_ix = function (pos) {
-    return pos.r * this.width + pos.c;
+    var ix = 0;
+    for (var f = 1; f < pos.face; f++) {
+      var ext = this.face_dim(f);
+      ix += ext.w * ext.h;
+    }
+    return ix + pos.r * this.face_dim(pos.face).w + pos.c;
   }
 
-  //
-  this.rev_cell_ix = function(i) {
-    return {r: Math.floor(i / this.width), c: i % this.width};
+  this.for_each_index = function(board, do_) {
+    for (var f = 1; f <= 6; f++) {
+      var ext = this.face_dim(f);
+      for (var r = 0; r < ext.h; r++) {
+        for (var c = 0; c < ext.w; c++) {
+          do_({face: f, r: r, c: c}, board);
+        }
+      }
+    }
   }
 
   this.num_cells = function () {
     return 2 * (this.width * this.height + this.width * this.depth + this.height * this.depth);
   }
 
-  this.for_range = function(center, dim, wrap, do_) {
-    var BIG = 1e6;
-    var r_lo = Math.max(center.r - dim, wrap ? -BIG : 0);
-    var r_hi = Math.min(center.r + dim, wrap ? +BIG : height - 1);
-    var c_lo = Math.max(center.c - dim, wrap ? -BIG : 0);
-    var c_hi = Math.min(center.c + dim, wrap ? +BIG : width - 1);
-    for (var r = r_lo; r <= r_hi; r++) {
-      for (var c = c_lo; c <= c_hi; c++) {
-        do_((r + this.height) % this.height, (c + this.width) % this.width);
-      }
-    }    
+  this.face_dim = function(face) {
+    switch (face) {
+    case 1: return {w: this.width, h: this.height};
+    case 2: return {w: this.width, h: this.depth};
+    case 3: return {w: this.height, h: this.depth};
+    case 4: return {w: this.height, h: this.width};
+    case 5: return {w: this.depth, h: this.width};
+    case 6: return {w: this.depth, h: this.height};
+    }
+  }
+
+  this.get = function(face, r, c, orientation) {
+    var ext = this.face_dim(face);
+    var _r, _c;
+    switch (orientation) {
+    case 0: _r = r;             _c = c; break;
+    case 1: _r = ext.h - 1 - c; _c = r; break;
+    case 2: _r = ext.h - 1 - r; _c = ext.w - 1 - c; break;
+    case 3: _r = c;             _c = ext.w - 1 - r; break;
+    }
+    r = _r; c = _c;
+    return {face: face, r: r < 0 ? ext.h + r : r, c: c < 0 ? ext.w + c : c};
   }
 
   this.adjacent = function (pos) {
     var adj = [];
-    var adjfunc = this.adjfunc || function(topo, pos, do_) {
-      topo.for_range(pos, 1, topo.wrap, do_);
-    };
-    adjfunc(this, pos, function(r, c) {
-        if (r != pos.r || c != pos.c) {
-          adj.push({r: r, c: c});
+    for (var r = pos.r - 1; r <= pos.r + 1; r++) {
+      for (var c = pos.c - 1; c <= pos.c + 1; c++) {
+        var ext = this.face_dim(pos.face);
+        var r_oor = (r < 0 || r >= ext.h);
+        var c_oor = (c < 0 || c >= ext.w);
+        if (!r_oor || !c_oor) {
+          if (r_oor || c_oor) {
+            if (r < 0) {
+              var dir = 0;
+            } else if (r >= ext.h) {
+              var dir = 2;
+            } else if (c < 0) {
+              var dir = 3;
+            } else if (c >= ext.w) {
+              var dir = 1;
+            }
+            var edge = null;
+            for (var i = 0; i < this.face_adj.length; i++) {
+              var e = this.face_adj[i];
+              if ((e.f0 == pos.face && e.dir == dir) || (e.f1 == pos.face && e.dir == (dir + e.orient + 2) % 4)) {
+                edge = e;
+                break;
+              }
+            }
+            var _r = (r >= ext.h ? r - ext.h : r);
+            var _c = (c >= ext.w ? c - ext.w : c);
+            if (edge.f0 == pos.face) {
+              adj.push(this.get(edge.f1, _r, _c, edge.orient));
+            } else {
+              adj.push(this.get(edge.f0, _r, _c, (4 - edge.orient) % 4));
+            }
+          } else {
+            if (r != pos.r || c != pos.c) {
+              adj.push({r: r, c: c, face: pos.face});
+            }
+          }
         }
-      });
+      }
+    }
     return adj;
   }
 
-  this.cell_dim = function (canvas) {
-    var dim = Math.min(canvas.height / this.height, canvas.width / this.width);
-    return (dim >= 10. ? Math.floor(dim) : dim);
+  this.EDGE_MARGIN = .1;
+
+  this.constants = function(canvas) {
+    var x_offset = [0, this.width, this.width + this.height];
+    var y_offset = [0, this.height, this.height + this.depth, this.height + this.depth + this.width]
+    for (var i = 0; i < x_offset.length; i++) {
+      x_offset[i] += i * this.EDGE_MARGIN;
+    }
+    for (var i = 0; i < y_offset.length; i++) {
+      y_offset[i] += i * this.EDGE_MARGIN;
+    }
+    var x_max = x_offset[2] + this.depth;
+    var y_max = y_offset[3] + this.height;
+    var _t = x_max; x_max = y_max; y_max = _t;
+
+    var dim = Math.min(canvas.height / y_max, canvas.width / x_max);
+    var snap = function(k) {
+      return (dim >= 10. ? Math.floor(k) : k);
+    }
+
+    var corner = function(pos) {
+      var face_row = Math.floor(pos.face / 2);
+      var face_col = Math.floor((pos.face - 1) / 2);
+      var x = pos.c + x_offset[face_col];
+      var y = pos.r + y_offset[face_row];
+      var _t = x; x = y; y = _t;
+
+      return {px: snap(snap(dim) * x), py: snap(snap(dim) * y)};
+    }
+
+    return {dim: snap(dim), corner: corner};
   }
 
   this.geom = function (pos, canvas) {
-    var dim = this.cell_dim(canvas);
-    var span = dim - MARGIN;
-    var corner = [pos.c * dim, pos.r * dim];
-    var center = [corner[0] + .5 * span, corner[1] + .5 * span];
+    var c = this.constants(canvas);
+
+    var span = c.dim - MARGIN;
+    var p = c.corner(pos);
     var fillfunc = function(ctx) {
-      ctx.fillRect(corner[0], corner[1], span, span);
+      ctx.fillRect(p.px, p.py, span, span);
     }
-    return {span: span, center: center, fill: fillfunc};
+
+    return {span: span, center: [p.px + .5 * span, p.py + .5 * span], fill: fillfunc};
   }
 
   this.cell_from_xy = function (p, canvas) {
-    var dim = this.cell_dim(canvas);
-    var r = Math.floor(p.y / dim);
-    var c = Math.floor(p.x / dim);
-    if (r >= 0 && r < this.height && c >= 0 && c < this.width) {
-      return {r: r, c: c};
-    } else {
-      return null;
+    var _ = this.constants(canvas);
+    for (var f = 6; f >= 1; f--) {
+      var corner = _.corner({face: f, r: 0, c: 0});
+      var r = Math.floor((p.y - corner.py) / _.dim);
+      var c = Math.floor((p.x - corner.px) / _.dim);
+      var ext = this.face_dim(f);
+      if (r >= 0 && r < ext.h && c >= 0 && c < ext.w) {
+        return {face: f, r: r, c: c};
+      }
     }
+    return null;
   }
 }
-*/
 
 function Cube3dTopo (width, height, depth) {
   this.w = width;
@@ -525,11 +628,14 @@ function Cube3dTopo (width, height, depth) {
     return (pos.z * this.h + pos.y) * this.w + pos.x;
   }
 
-  this.rev_cell_ix = function(i) {
-    var z = Math.floor(i / (this.w * this.h));
-    var y = Math.floor((i % (this.w * this.h)) / this.w);
-    var x = i % this.w;
-    return {x: x, y: y, z: z}
+  this.for_each_index = function(board, do_) {
+    for (var x = 0; x < this.w; x++) {
+      for (var y = 0; y < this.h; y++) {
+        for (var z = 0; z < this.d; z++) {
+          do_({x: x, y: y, z: z}, board);
+        }
+      }
+    }
   }
 
   this.num_cells = function () {
