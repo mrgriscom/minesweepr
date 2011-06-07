@@ -22,6 +22,8 @@ $(document).ready(function() {
     $('#game_canvas').mouseout(function(e){
         $("#tooltip").hide();
       });
+    $('#win').hide();
+    $('#fail').hide();
 
     set_defaults();
     new_game();
@@ -137,21 +139,25 @@ function GameSession (board, canvas, first_safe) {
 
     this.render();
     this.update_info();
-    this.solve(SOLVER_URL);
+    this.solve(SOLVER_URL, true);
   };
 
+  this.prepare_first_move = function() {
+    if (this.first_safe) {
+      var safe = this.board.safe_cell();
+      this.cell_probs[this.board.get_cell(safe).name] = 0.;
+      this.best_guesses = [];
+    }
+  }
+
   this.move = function() {
-    //check if move is makeable
+    if (this.status != 'in_progress') {
+      return;
+    }
     //check if move in progress
 
-    //make move
-    //update stats
-    //get solution
-    //display solution
-
-    var survived = this.action();
-    this.update_info();
-    if (survived) {
+    this.action();
+    if (this.status == 'in_progress') {
       this.solve(SOLVER_URL);
     }
   }
@@ -192,10 +198,13 @@ function GameSession (board, canvas, first_safe) {
       });
   }
 
-  this.solve = function(url) {
+  this.solve = function(url, first) {
     var self = this;
     this.solve_(url, function (data, board) {
         self.process_probs(data);
+        if (first) {
+          self.prepare_first_move();
+        }
         self.render();
       });
   }
@@ -260,14 +269,23 @@ function GameSession (board, canvas, first_safe) {
         }
       });
 
+    if (!survived) {
+      this.status = 'fail';
+    } else if (this.board.is_complete()) {
+      this.status = 'win';
+    }
+
+    this.first_move = false;
+    this.update_info();
     this.render();
-    return survived;
   }
 
   this.update_info = function() {
     $('#num_mines').text(this.remaining_mines || '??');
     $('#risk').text(fmt_pct(this.total_risk));
-    //game status
+
+    $('#win')[this.status == 'win' ? 'show' : 'hide']();
+    $('#fail')[this.status == 'fail' ? 'show' : 'hide']();
   }
 
 

@@ -106,10 +106,20 @@ function Board (topology) {
     return m;
   }
 
+  this.is_complete = function () {
+    var complete = true;
+    this.for_each_cell(function (pos, cell, board) {
+        if (!cell.visible && ((cell.state == 'mine') != cell.flagged)) {
+          complete = false;
+        }
+      });
+    return complete;
+  }
+
   this.safe_cell = function () {
     var c = [];
     this.for_each_cell(function (pos, cell, board) {
-        if (cell.state != 'mine') {
+        if (!cell.visible && cell.state != 'mine') {
           c.push(pos);
         }
       });
