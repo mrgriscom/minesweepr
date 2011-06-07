@@ -60,9 +60,9 @@ td {
   </table>
   <table>
     <tr>
-      <td>Width:&nbsp;&nbsp;</td>
+      <td width="1%">Width:&nbsp;&nbsp;</td>
       <td><input id="width" type="text" style="width: 6em;">&nbsp;&nbsp;</td>
-      <td>Height:&nbsp;&nbsp;</td>
+      <td width="1%">Height:&nbsp;&nbsp;</td>
       <td><input id="height" type="text" style="width: 6em;">&nbsp;&nbsp;</td>
       <td><span id="depth_lab">Depth:&nbsp;&nbsp;</span></td>
       <td><input id="depth" type="text" style="width: 6em;"></td>
@@ -72,32 +72,14 @@ td {
       <td><input id="mines" type="text" style="width: 6em;"></td>
       <td colspan="4" class="help">total # of mines OR<br>per-cell probability of a mine 0.0-1.0 (total # will vary)</td>
     </tr>
-    <tr>
-      <td colspan="2"><input id="first_safe" type="checkbox"> 1<sup>st</sup> click is safe</td>
-      <td colspan="4" align="right"><span class="help">(ctrl+enter)</span>&nbsp;<a id="start" href="#"><b>start new game<b></a></td>
-    </tr>
   </table>
-
+  <table>
+    <tr>
+      <td><input id="first_safe" type="checkbox"> 1<sup>st</sup> click is safe</td>
+      <td align="right">
+        &nbsp;&nbsp;&nbsp;<span class="help">(ctrl+enter)</span>&nbsp;<a id="start" href="#"><b>start new game</b></a>
+        &nbsp;&nbsp;&nbsp;<span class="help">(enter)</span>&nbsp;<a id="step" href="#"><b>next move</b></a>
       </td>
-      <td valign="top">
-
-  <table style="margin-left: 100px; background: #eee;">
-    <tr>
-      <td colspan="6"><h3>Player</h3></td>
-    </tr>
-    <tr>
-      <td style="width: 8em;"<input name="player" type="radio"> Automatic</td>
-      <td align="right"><a href="#"><b>pause</b></a></td>
-    </tr>
-    <tr>
-      <td colspan="2" style="padding-left: 2em;">Delay:&nbsp;&nbsp;<input type="text" style="width: 4em; text-align: right;">s<br><br></td>
-    </tr>
-    <tr>
-      <td><input name="player" type="radio"> Manual</td>
-      <td align="right"><a id="step" href="#"><b>next move</b></a></td>
-    </tr>
-    <tr>
-      <td align="right" colspan="2" class="help">(or press enter)</td>
     </tr>
   </table>
 
