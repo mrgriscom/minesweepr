@@ -18,7 +18,7 @@ function prob_shade (p, best) {
   } else if (p > 1 - EPSILON) {
     return 'rgba(255, 0, 0, .2)';
   } else {
-    var MIN_ALPHA = .05;
+    var MIN_ALPHA = (best ? .15 : .05);
     var MAX_ALPHA = .8;
     var alpha = MIN_ALPHA * (1 - p) + MAX_ALPHA * p;
     return 'rgba(' + (best ? 255 : 0) + ', 255, 0, ' + alpha + ')';

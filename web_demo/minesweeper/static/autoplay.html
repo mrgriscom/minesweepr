@@ -3,6 +3,7 @@
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
   <script src="minesweeper.js" type="text/javascript"></script>
   <script src="autoplay.js" type="text/javascript"></script>
+  <script src="shortcut.js" type="text/javascript"></script>
 </head>
 <body style="font-family: sans-serif;">
 
@@ -72,8 +73,8 @@ td {
       <td colspan="4" class="help">total # of mines OR<br>per-cell probability of a mine 0.0-1.0 (total # will vary)</td>
     </tr>
     <tr>
-      <td colspan="4"><input id="first_safe" type="checkbox"> 1<sup>st</sup> click is safe</td>
-      <td colspan="2" align="right"><a id="start" href="#"><b>start new game<b></a></td>
+      <td colspan="2"><input id="first_safe" type="checkbox"> 1<sup>st</sup> click is safe</td>
+      <td colspan="4" align="right"><span class="help">(ctrl+enter)</span>&nbsp;<a id="start" href="#"><b>start new game<b></a></td>
     </tr>
   </table>
 

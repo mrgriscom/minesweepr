@@ -27,6 +27,9 @@ $(document).ready(function() {
     $('#solving').hide();
     $('#solved').hide();
 
+    shortcut.add('enter', function() { game.move(); });
+    shortcut.add('ctrl+enter', new_game);
+
     set_defaults();
     new_game();
   });
