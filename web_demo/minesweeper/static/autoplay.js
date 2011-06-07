@@ -127,6 +127,7 @@ function GameSession (board, canvas, first_safe) {
   this.canvas = canvas;
   this.first_safe = first_safe;
   this.cell_probs = [];
+  this.best_guesses = [];
 
   this.start = function() {
     this.remaining_mines = this.board.num_mines;
@@ -134,13 +135,14 @@ function GameSession (board, canvas, first_safe) {
     this.first_move = true;
     this.status = 'in_progress';
 
-    this.update_stats();
-    this.board.render(this.canvas);
+    this.render();
+    this.update_info();
     this.solve(SOLVER_URL);
   };
 
   this.move = function() {
     //check if move is makeable
+    //check if move in progress
 
     //make move
     //update stats
@@ -148,7 +150,7 @@ function GameSession (board, canvas, first_safe) {
     //display solution
 
     var survived = this.action();
-    this.update_stats();
+    this.update_info();
     if (survived) {
       this.solve(SOLVER_URL);
     }
@@ -174,11 +176,18 @@ function GameSession (board, canvas, first_safe) {
     }
   }
 
+  this.render = function() {
+    this.board.render(this.canvas);
+    if (this.status == 'in_progress') {
+      this.render_overlays();
+    }
+  }
+
   this.render_overlays = function() {
     var self = this;
     this.apply(function (pos, cell, prob, board) {
         if (!cell.flagged) {
-          board.render_overlay(pos, prob_shade(prob), self.canvas);
+          board.render_overlay(pos, prob_shade(prob, self.best_guesses.indexOf(cell.name) != -1), self.canvas);
         }
       });
   }
@@ -186,8 +195,8 @@ function GameSession (board, canvas, first_safe) {
   this.solve = function(url) {
     var self = this;
     this.solve_(url, function (data, board) {
-        self.cell_probs = data;
-        self.display_solution();
+        self.process_probs(data);
+        self.render();
       });
   }
 
@@ -203,50 +212,62 @@ function GameSession (board, canvas, first_safe) {
       }, "json");
   }
 
-  this.display_solution = function() {
-    this.render_overlays();
-  }
+  this.process_probs = function(probs) {
+    this.cell_probs = probs;
 
-  this.action = function() {
     var must_guess = true;
     var guesses = [];
     var min_prob = 1.;
+    var self = this;
+    this.apply(function (pos, cell, prob, board) {
+        if (prob < EPSILON) {
+          must_guess = false;
+        } else if (prob < 1. - EPSILON) {
+          guesses.push({name: cell.name, p: prob});
+          min_prob = Math.min(min_prob, prob);
+        }
+      });
+    this.best_guesses = [];
+    if (must_guess) {
+      for (var i = 0; i < guesses.length; i++) {
+        if (guesses[i].p < min_prob + EPSILON) {
+          this.best_guesses.push(guesses[i].name);
+        }
+      }
+    }
+  }
+
+  this.action = function() {
     var survived = true;
+
+    var guess = null;
+    if (this.best_guesses.length) {
+      var guess = choose_rand(this.best_guesses);
+    }
+
     var self = this;
     this.apply(function (pos, cell, prob, board) {
         if (prob < EPSILON) {
           board.uncover(pos);
-          must_guess = false;
         } else if (prob > 1. - EPSILON) {
           if (!cell.flagged && board.num_mines) {
             self.remaining_mines--;
           }
           board.flag(pos);
-        } else {
-          guesses.push({pos: pos, p: prob});
-          min_prob = Math.min(min_prob, prob);
+        } else if (cell.name == guess) {
+          survived = this.board.uncover(pos);
+          self.total_risk = 1. - (1. - self.total_risk) * (1. - prob);
         }
       });
-    if (must_guess) {
-      var best_guesses = [];
-      for (var i = 0; i < guesses.length; i++) {
-        if (guesses[i].p < min_prob + EPSILON) {
-          best_guesses.push(guesses[i]);
-        }
-      }
-      if (best_guesses.length) {
-        var guess = choose_rand(best_guesses);
-        survived = this.board.uncover(guess.pos);
-        this.total_risk = 1. - (1. - this.total_risk) * (1. - min_prob);
-      } // else only occurs at the very end when all there is left to do is flag remaining mines
-    }
-    this.board.render(this.canvas);
+
+    this.render();
     return survived;
   }
 
-  this.update_stats = function() {
+  this.update_info = function() {
     $('#num_mines').text(this.remaining_mines || '??');
     $('#risk').text(fmt_pct(this.total_risk));
+    //game status
   }
 
 
