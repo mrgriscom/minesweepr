@@ -5,17 +5,7 @@ $(document).ready(function() {
     $(window).resize(resize_canvas);
     resize_canvas();
 
-    $('input[name="topo"]').change(function(e) {
-        var _3d = ['cube3d', 'cube2d'];
-        var selected = $(e.target).val();
-        if (_3d.indexOf(selected) != -1) {
-          $('#depth').show();
-          $('#depth_lab').show();       
-        } else {
-          $('#depth').hide();
-          $('#depth_lab').hide();
-        }
-      });
+    $('input[name="topo"]').change(topoChanged);
     
     $('#start').click(function(e) {
         new_game();
@@ -38,16 +28,45 @@ $(document).ready(function() {
   });
 
 function set_defaults() {
+  cached_dimensions = {_2d: [30, 16, null, 100], _3d: [6, 10, 8, 80]};
+  active_dimension = null;
+
   selectChoice($('input[name="topo"][value="grid"]'));
-  $('#width').val(30);
-  $('#height').val(16);
-  $('#mines').val(100);
   selectChoice($('#first_safe'));
 }
 
 function selectChoice(elem) {
   elem.attr('checked', true);
   elem.trigger('change');
+}
+
+function topo_dim(topo) {
+  var _3d = ['cube3d', 'cube2d'];
+  return (_3d.indexOf(topo) != -1 ? '_3d' : '_2d');
+}
+
+function topoChanged(e) {
+  var selected = $(e.target).val();
+  var cur_dimension = topo_dim(selected);
+
+  if (cur_dimension == '_3d') {
+    $('#depth').show();
+    $('#depth_lab').show();       
+  } else {
+    $('#depth').hide();
+    $('#depth_lab').hide();
+  }
+  
+  if (active_dimension != cur_dimension) {
+    if (active_dimension != null) {
+      cached_dimensions[active_dimension] = [$('#width').val(), $('#height').val(), active_dimension == '_3d' ? $('#depth').val() : null, $('#mines').val()];
+    }
+    $('#width').val(cached_dimensions[cur_dimension][0]);
+    $('#height').val(cached_dimensions[cur_dimension][1]);
+    $('#depth').val(cached_dimensions[cur_dimension][2]);
+    $('#mines').val(cached_dimensions[cur_dimension][3]);
+    active_dimension = cur_dimension;
+  }
 }
 
 function parsemine(raw, surface_area) {
