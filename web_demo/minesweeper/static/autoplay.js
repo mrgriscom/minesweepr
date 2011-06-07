@@ -24,6 +24,8 @@ $(document).ready(function() {
       });
     $('#win').hide();
     $('#fail').hide();
+    $('#solving').hide();
+    $('#solved').hide();
 
     set_defaults();
     new_game();
@@ -200,7 +202,7 @@ function GameSession (board, canvas, first_safe) {
 
   this.solve = function(url, first) {
     var self = this;
-    this.solve_(url, function (data, board) {
+    this.solve_query(url, function (data, board) {
         self.process_probs(data);
         if (first) {
           self.prepare_first_move();
@@ -209,14 +211,22 @@ function GameSession (board, canvas, first_safe) {
       });
   }
 
-  this.solve_ = function(url, callback) {
+  this.solve_query = function(url, callback) {
     var self = this;
+
+    $('#solving').show();
+    $('#solved').hide();
+
     $.post(url, JSON.stringify(this.board.game_state()), function (data) {
+        $('#solving').hide();
+        $('#solved').show();
+        $('#solve_time').text(data.processing_time.toFixed(3) + 's');
+
         var solution = data.solution;
         if (solution['_other'] == null && self.board.mine_prob != null) {
           solution['_other'] = self.board.mine_prob;
         }
-        
+
         callback(solution);
       }, "json");
   }
