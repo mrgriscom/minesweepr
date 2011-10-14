@@ -171,24 +171,35 @@ def condense_supercells(rules):
     return ([rule.condensed(rule_supercells_map) for rule in rules], rules_supercell_map.values())
 
 def reduce_rules(rules):
+    """reduce ruleset using logical deduction"""
     rr = RuleReducer()
     rr.add_rules(rules)
     return rr.reduce_all()
 
 class Reduceable(object):
+    """during the logical deduction phase, if all rules are nodes in a graph,
+    this represents a directed edge in that graph indicating 'superrule' can
+    be reduced from 'subrule'"""
+
     def __init__(self, superrule, subrule):
         self.superrule = superrule
         self.subrule = subrule
 
     def metric(self):
+        """calculate the attractiveness of this reduction
+
+        favor reductions that involve bigger rules, and amongst same-sized
+        rules, those that yield # mines towards the extremes -- such rules
+        have fewer permutations
+        """
+
         num_reduced_cells = self.superrule.num_cells - self.subrule.num_cells
         num_reduced_mines = self.superrule.num_mines - self.subrule.num_mines
-        # favor reductions that involve bigger rules, and amongst same-sized rules, those
-        # that yield # mines towards the extremes -- such rules have fewer permutations
         return (self.superrule.num_cells, self.subrule.num_cells,
                 abs(num_reduced_mines - .5 * num_reduced_cells))
 
     def reduce(self):
+        """perform the reduction"""
         return self.superrule.subtract(self.subrule)
 
     def contains(self, rule):
@@ -197,6 +208,7 @@ class Reduceable(object):
     def __repr__(self):
         return 'Reduceable(superrule=%s, subrule=%s)' % (self.superrule, self.subrule)
 
+# todo: doc me
 class CellRulesMap(object):
     def __init__(self, rules=[]):
         self.map = collections.defaultdict(set)
@@ -253,28 +265,37 @@ def _graph_traverse(graph, node, visited):
             _graph_traverse(graph, neighbor, visited)
 
 class RuleReducer(object):
+    """manager object that performs the 'logical deduction' phase of
+    the solver; maintains a set of active rules, tracks which rules
+    overlap with other rules, and iteratively reduces them until no
+    further reductions are possible"""
+
     def __init__(self):
         # current list of rules
         self.active_rules = set()
         # reverse lookup for rules containing a given cell
         self.cell_rules_map = CellRulesMap()
         # current list of all possible reductions
-        self.candidate_reductions = set() #could make this a priority queue for efficiency
+        self.candidate_reductions = set() #todo: make this a priority queue
 
     def add_rules(self, rules):
+        """add a set of rules to the ruleset"""
         for rule in rules:
             self.add_rule(rule)
 
     def add_rule(self, rule):
+        """add a new rule to the active ruleset"""
         for base_rule in rule.decompose():
             self.add_base_rule(base_rule)
 
     def add_base_rule(self, rule):
+        """helper for adding a rule"""
         self.active_rules.add(rule)
         self.cell_rules_map.add_rule(rule)
         self.update_reduceables(rule)
 
     def update_reduceables(self, rule):
+        """update the index of which rules are reduceable from others"""
         rules_ov = self.cell_rules_map.overlapping_rules(rule)
         for rule_ov in rules_ov:
             if rule_ov.is_subrule_of(rule):
@@ -284,22 +305,27 @@ class RuleReducer(object):
                 self.candidate_reductions.add(Reduceable(rule_ov, rule))
 
     def remove_rule(self, rule):
+        """remove a rule from the active ruleset/index, presumably because it
+        was reduced"""
         self.active_rules.remove(rule)
         self.cell_rules_map.remove_rule(rule)
-        # could make this more efficient with an index rule -> reduceables
+        # todo: make this more efficient with an index of rule -> reduceables
         self.candidate_reductions = set(reduc for reduc in self.candidate_reductions if not reduc.contains(rule))
 
     def pop_best_reduction(self):
+        """get the highest-value reduction to perform next"""
         reduction = max(self.candidate_reductions, key=lambda reduc: reduc.metric())
         self.candidate_reductions.remove(reduction)
         return reduction
 
     def reduce(self, reduction):
+        """perform a reduction"""
         reduced_rule = reduction.reduce()
         self.remove_rule(reduction.superrule)
         self.add_rule(reduced_rule)
 
     def reduce_all(self):
+        """run the manager"""
         while self.candidate_reductions:
             self.reduce(self.pop_best_reduction())
 
