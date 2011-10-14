@@ -4,15 +4,33 @@ import operator
 import math
 
 class InconsistencyError(Exception):
+    """raise when a game state is logically inconsistent."""
     pass
 
+"""represents the board geometry for traditional minesweeper, where the board
+has fixed dimensions and fixed total # of mines.
+
+total_cells -- total # of cells on board; all cells contained in rules + all
+    'uncharted' cells
+total_mines: total # of mines contained within all cells
+"""
 MineCount = collections.namedtuple('MineCount', ['total_cells', 'total_mines'])
-# total_cells: total # of cells on board; all cells contained in rules + all
-#   'uncharted' cells
-# total_mines: total # of mines contained within all cells
 
 def solve(rules, mine_prevalence, other_tag=None):
-    # mine_prevalence is a MineCount or float (base probability that cell is mine)
+    """solve a minesweeper board.
+
+    take in a minesweeper board and return the solution as a dict mapping each
+    cell to its probability of being a mine.
+
+    rules -- a set of 'Rule' describing the board
+    mine_prevalence -- an object describing the total expected mines on the
+        board. a MineCount indicates traditional minesweeper (fixed board
+        dimensions with a total # of mines); a float indicates a fixed
+        probability that any unknown cell is a mine (total # of mines will
+        vary for given board dimensions, in a binomial distribution)
+    other_tag -- tag used to represent all 'other' cells (all cells not
+        mentioned in a rule) in the solution output
+    """
 
     rules, all_cells = condense_supercells(rules)
     rules = reduce_rules(rules)
@@ -33,14 +51,23 @@ def solve(rules, mine_prevalence, other_tag=None):
     return dict(expand_cells(cell_probs, other_tag))
 
 class Rule(object):
-    # num_mines: # of mines contained in 'cells'
-    # cells: set of cell ids
+    """basic representation of an axiom from a minesweeper game: N mines
+    contained within a set of M cells.
+
+    num_mines -- # of mines
+    cells -- list of cells; each 'cell' is a unique, identifying tag that
+        represents that cell (string, int, any hashable)
+    """
 
     def __init__(self, num_mines, cells):
         self.num_mines = num_mines
         self.cells = set_(cells)
 
     def condensed(self, rule_supercells_map):
+        """condense supercells and convert to a 'Rule_'
+
+        rule_supercells_map -- pre-computed supercell mapping
+        """
         return Rule_(
             self.num_mines,
             rule_supercells_map.get(self, set_()), # default to handle degenerate rules
@@ -51,10 +78,14 @@ class Rule(object):
         return 'Rule(num_mines=%d, cells=%s)' % (self.num_mines, sorted(list(self.cells)))
 
 class Rule_(object):
-    # num_mines: # of mines contained in 'cells_'
-    # num_cells: # of base cells in 'cells_'
-    # cells: set of supercells; each supercell a set of base cells
-    
+    """analogue of 'Rule', but containing supercells (sets of 'ordinary' cells
+    that only ever appear together).
+
+    num_mines -- total # of mines
+    num_cells -- total # of base cells
+    cells_ -- set of supercells; each supercell a set of base cells
+    """
+
     def __init__(self, num_mines, cells_, num_cells=None):
         self.num_mines = num_mines
         self.cells_ = cells_
@@ -64,6 +95,8 @@ class Rule_(object):
             raise InconsistencyError('rule with negative mines / more mines than cells')
 
     def decompose(self):
+        """if rule is completely full or empty of mines, split into sub-rules
+        for each supercell"""
         if self.num_mines == 0 or self.num_mines == self.num_cells:
             for cell_ in self.cells_:
                 size = len(cell_)
@@ -73,22 +106,31 @@ class Rule_(object):
             yield self
 
     def subtract(self, subrule):
+        """if another rule is a sub-rule of this one, return a new rule
+        covering only the difference"""
         return Rule_(self.num_mines - subrule.num_mines,
                      self.cells_ - subrule.cells_,
                      self.num_cells - subrule.num_cells)
 
     def permute(self):
+        """generate all possible mine permutations of this rule"""
         for p in permute(self.num_mines, list(self.cells_)):
             yield p
 
     def is_subrule_of(self, parent):
+        """return if this rule is a sub-rule of 'parent'
+
+        'sub-rule' means this rule's cells are a subset of the parent rules'
+        cells. equivalent rules are subrules of each other.
+        """
         return self.cells_.issubset(parent.cells_)
-        # equivalent rules are subrules of each other
 
     def is_trivial(self):
+        """return whether this rule is trivial, i.e., has only one permutation"""
         return len(self.cells_) == 1
 
     def tally(self):
+        """build a FrontTally from this *trivial* rule"""
         return FrontTally.from_rule(self)
 
     def __repr__(self):
@@ -97,14 +139,33 @@ class Rule_(object):
 
     @staticmethod
     def mk(num_mines, cells_):
-        def listify(x):
-            return x if hasattr(x, '__iter__') else [x]
+        """helper method for creating
+
+        num_mines -- total # of mines
+        cells_ -- list of cells and supercells, where a supercell is a list of
+            ordinary cells, e.g., ['A', ['B', 'C'], 'D']
+        """
         cells_ = [listify(cell_) for cell_ in cells_]
         return Rule_(num_mines, set_(set_(cell_) for cell_ in cells_))
 
 def condense_supercells(rules):
+    """condense supercells by finding sets of ordinary cells that only ever
+    appear together. returns a set of 'Rule_' corresponding to the original
+    ruleset.
+
+    rules -- original set of 'Rule' to analyze
+
+    note that ALL cells are converted to supercells for ease of processing
+    later, even if that cell does not group with any others. the result would
+    be a singleton supercell
+    """
+
+    # for each cell, list of rules that cell appears in
     cell_rules_map = map_reduce(rules, lambda rule: [(cell, rule) for cell in rule.cells], set_)
+    # for each 'list of rules appearing in', list of cells that share that ruleset (these cells
+    # thus only ever appear together in the same rules)
     rules_supercell_map = map_reduce(cell_rules_map.iteritems(), lambda (cell, rules): [(rules, cell)], set_)
+    # for each original rule, list of 'supercells' appearing in that rule
     rule_supercells_map = map_reduce(rules_supercell_map.iteritems(), lambda (rules, cell_): [(rule, cell_) for rule in rules], set_)
 
     return ([rule.condensed(rule_supercells_map) for rule in rules], rules_supercell_map.values())
@@ -761,3 +822,6 @@ def map_reduce(data, emitfunc=lambda rec: [(rec,)], reducefunc=lambda v: v):
                 k, v = emission[0], None
             mapped[k].append(v)
     return dict((k, reducefunc(v)) for k, v in mapped.iteritems())
+
+def listify(x):
+    return list(x) if hasattr(x, '__iter__') else [x]
