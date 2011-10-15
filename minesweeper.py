@@ -783,10 +783,20 @@ class EnumerationState(object):
                     yield mineconfig
 
 class FrontTally(object):
+    """tabulation of per-cell mine frequencies"""
+
     def __init__(self, data=None):
+        # mapping: # of mines in configuration -> sub-tally of configurations with that # of mines
         self.subtallies = collections.defaultdict(FrontSubtally) if data is None else data
 
     def tally(self, front):
+        """tally all possible configurations for a front (ruleset)
+
+        note that the tallies for different total # of mines must be
+        maintained separately, as these will be given different statistical
+        weights later on
+        """
+
         for config in front.enumerate():
             self.subtallies[config.k()].add(config)
 
@@ -797,32 +807,46 @@ class FrontTally(object):
         self.finalize()
 
     def finalize(self):
+        """finalize all sub-tallies (convert running totals to
+        probabilities/expected values)"""
         for subtally in self.subtallies.values():
             subtally.finalize()
 
     def min_mines(self):
+        """minimum # of mines found among all configurations"""
         return min(self.subtallies)
 
     def max_mines(self):
+        """maximum # of mines found among all configurations"""
         return max(self.subtallies)
 
     def is_static(self):
+        """whether all configurations have the same # of mines (simplifies
+        statistical weighting later)"""
         return len(self.subtallies) == 1
 
     def __iter__(self):
         return self.subtallies.iteritems()
 
     def normalize(self):
+        """normalize sub-tally totals into relative weights such that
+        sub-totals remain proportional to each other, and the grand total
+        across all sub-tallies is 1."""
         total = sum(subtally.total for subtally in self.subtallies.values())
         for subtally in self.subtallies.values():
             subtally.total /= float(total)
             
     def collapse(self):
+        """calculate the per-cell expected mine values, summed/weighted across
+        all sub-tallies"""
         self.normalize()
-        return map_reduce(self.subtallies.values(), lambda subtally: subtally.collapse(), sum)
+        collapsed = map_reduce(self.subtallies.values(), lambda subtally: subtally.collapse(), sum)
+        for entry in collapsed.iteritems():
+            yield entry
 
     @staticmethod
     def from_rule(rule):
+        """tally a trivial rule"""
         if not rule.is_trivial():
             raise ValueError()
 
@@ -830,6 +854,7 @@ class FrontTally(object):
 
     @staticmethod
     def for_other(num_uncharted_cells, mine_totals):
+        #todo: ???
         metacell = UnchartedCell(num_uncharted_cells)
         return FrontTally(dict((num_mines, FrontSubtally.mk(k, {metacell: num_mines})) for num_mines, k in mine_totals.iteritems()))
 
@@ -837,26 +862,41 @@ class FrontTally(object):
         return str(dict(self.subtallies))
 
 class FrontSubtally(object):
+    """sub-tabulation of per-cell mine frequencies"""
+
     def __init__(self):
+        # 'weight' of this sub-tally among the others in the FrontTally. initially
+        # will be a raw count of the configurations in this sub-tally, but later
+        # will be skewed due to weighting and normalizing factors
         self.total = 0
+        # per-cell mine counts (pre-finalizing) / mine prevalence (post-finalizing)
+        # mapping: supercell -> total # of mines in cell summed across all configurations (pre-finalize)
+        #                    -> expected # of mines in cell (post-finalize)
         self.tally = collections.defaultdict(lambda: 0)
 
     def add(self, config):
-        mult = config.multiplicity()
+        """add a configuration to the tally"""
+        mult = config.multiplicity() # weight by multiplicity
         self.total += mult
         for cell_, n in config.mapping.iteritems():
             self.tally[cell_] += n * mult
 
     def finalize(self):
+        """after all configurations have been summed, compute relative
+        prevalence from totals"""
         self.tally = dict((cell_, n / float(self.total)) for cell_, n in self.tally.iteritems())
 
     def collapse(self):
+        """helper function for FrontTally.collapse(); emit all cell expected
+        mine values weighted by this sub-tally's weight"""
         for cell_, expected_mines in self.tally.iteritems():
             yield (cell_, self.total * expected_mines)
 
     @staticmethod
     def mk(total, tally):
-        # tally must be pre-finalized
+        """build a sub-tally manually
+
+        tally data must already be finalized"""
         o = FrontSubtally()
         o.total = total
         o.tally = tally
@@ -866,29 +906,51 @@ class FrontSubtally(object):
         return str((self.total, dict(self.tally)))
 
 def enumerate_front(front):
+    """enumerate and tabulate all mine configurations for the given front
+
+    return a tally where: sub-totals are split out by total # of mines in
+    configuration, and each sub-tally contains: a total count of matching
+    configurations, and expected # of mines in each cell
+    """
     tally = FrontTally()
     tally.tally(front)
     return tally
 
-def cell_probabilities(stats, mine_prevalence, all_cells):
+def cell_probabilities(tallies, mine_prevalence, all_cells):
+    """analyze all FrontTallys as a whole and weight the likelihood of each
+    sub-tally using probability analysis, then return the final expected # of
+    mines per cell for all cells.
+
+    tallies -- set of 'FrontTally's
+    mine_prevalence -- description of #/frequency of mines in board (from solve())
+    all_cells -- a set of all supercells from all rules
+
+    generates a stream of tuples: (cell, # mines / cell) for all cells
+    """
+
+    # True: traditional minesweeper -- fixed total # of mines
+    # False: fixed overall probability of mine; total # of mines varies per game
     discrete_mode = isinstance(mine_prevalence, MineCount)
 
     if discrete_mode:
-        num_uncharted_cells = check_count_consistency(stats, mine_prevalence, all_cells)
+        num_uncharted_cells = check_count_consistency(tallies, mine_prevalence, all_cells)
 
-    dyn_stats = set(st for st in stats if not st.is_static())
+    # tallies with only one sub-tally don't need weighting
+    dyn_tallies = set(tally for tally in tallies if not tally.is_static())
+
     if discrete_mode:
-        num_static_mines = sum(st.max_mines() for st in stats - dyn_stats)
+        num_static_mines = sum(tally.max_mines() for tally in (tallies - dyn_tallies))
         at_large_mines = mine_prevalence.total_mines - num_static_mines
 
-        other_stat = combine_fronts(dyn_stats, num_uncharted_cells, at_large_mines)
-        stats.add(other_stat)
+        tally_uncharted = combine_fronts(dyn_tallies, num_uncharted_cells, at_large_mines)
+        tallies.add(tally_uncharted)
     else:
-        for st in dyn_stats:
-            for num_mines, subtally in st:
-                subtally.total *= nondiscrete_relative_likelihood(mine_prevalence, num_mines, st.min_mines())
+        for tally in dyn_tallies:
+            for num_mines, subtally in tally:
+                subtally.total *= nondiscrete_relative_likelihood(mine_prevalence, num_mines, tally.min_mines())
 
-    return itertools.chain(*(st.collapse().iteritems() for st in stats))
+    # concatenate and emit the cell solutions from all fronts
+    return itertools.chain(*(tally.collapse() for tally in tallies))
 
 def check_count_consistency(stats, mine_prevalence, all_cells):
     min_possible_mines, max_possible_mines = possible_mine_limits(stats)
@@ -938,7 +1000,14 @@ def possible_mine_limits(stats):
 
 def nondiscrete_relative_likelihood(p, k, k0):
     """given binomial probability (p,k,n) => p^k*(1-p)^(n-k),
-    return binom_prob(p,k,n) / binom_prob(p,k0,n)"""
+    return binom_prob(p,k,n) / binom_prob(p,k0,n)
+
+    note that n isn't actually needed! this is because we're calculating a
+    per-configuration weight, and in a true binomial distribution we'd then
+    multiply by (n choose k) configurations; however, we've effectively done
+    that already with the enumeration/tallying phase
+    """
+
     if p < 0. or p > 1.:
         raise ValueError('p must be [0., 1.]')
 
@@ -952,6 +1021,9 @@ def discrete_relative_likelihood(n, k, k0):
     return float(fact_div(k0, k) * fact_div(n - k0, n - k))
 
 class UnchartedCell(object):
+    """a meta-cell object that represents all the 'other' cells on the board
+    that aren't explicitly mentioned in a rule"""
+
     def __init__(self, size):
         self.size = size
 
@@ -959,6 +1031,8 @@ class UnchartedCell(object):
         return self.size
 
     def __iter__(self):
+        """only appear once in the solution, regardless of size. however,
+        don't appear at all if in fact there are no 'other' cells"""
         if self.size > 0:
             yield None
 
@@ -990,7 +1064,10 @@ def choose(n, k):
     return fact_div(n, max(k, n - k)) / math.factorial(min(k, n - k))
 
 def _0(iterable):
-    """return the first item of an iterable"""
+    """return the first item of an iterable
+
+    useful to pick an arbitrary item from a collection, as no ordering is
+    guaranteed"""
     return iter(iterable).next()
 
 def product(n):
