@@ -36,16 +36,14 @@ def listify(x):
 def graph_traverse(graph, node):
     """graph traversal algorithm -- given a graph and a node, return the set
     of nodes that can be reached from 'node', including 'node' itself""" 
-    nodes = set()
-    _graph_traverse(graph, node, nodes)
-    return nodes
-
-def _graph_traverse(graph, node, visited):
-    """graph traversal helper"""
-    visited.add(node)
-    for neighbor in graph[node]:
-        if neighbor not in visited:
-            _graph_traverse(graph, neighbor, visited)
+    visited = set()
+    def _graph_traverse(n):
+        visited.add(n)
+        for neighbor in graph[n]:
+            if neighbor not in visited:
+                _graph_traverse(neighbor)
+    _graph_traverse(node)
+    return visited
 
 def map_reduce(data, emitfunc=lambda rec: [(rec,)], reducefunc=lambda v: v):
     """perform a "map-reduce" on the data
