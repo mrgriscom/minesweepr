@@ -984,10 +984,12 @@ def check_count_consistency(tallies, mine_prevalence, all_cells):
     return num_uncharted_cells
 
 def combine_fronts(tallies, num_uncharted_cells, at_large_mines):
+    """assign relative weights to all sub-tallies in all fronts. because the
+    total # of mines is fixed, we must do a combinatorial analysis to
+    compute the likelihood of each front containing each possible # of mines.
+    in the process, compute and return the mine count likelihood for the
+    'other' cells, not a part of any front.
     """
-
-    """
-
 
     # an abridged sub-tally: just # of mines and total count -- we don't care about per-cell details
     Subtally = collections.namedtuple('Subtally', ['num_mines', 'count'])
@@ -1000,13 +1002,19 @@ def combine_fronts(tallies, num_uncharted_cells, at_large_mines):
     def relative_likelihood_func():
         min_possible_mines, _ = possible_mine_limits(tallies)
         max_free_mines = min(max(at_large_mines - min_possible_mines, 0), num_uncharted_cells)
-        def relative_likelihood(num_free_mines):
-            return discrete_relative_likelihood(num_uncharted_cells, num_free_mines, max_free_mines)
-        return relative_likelihood
+        return lambda num_free_mines: discrete_relative_likelihood(num_uncharted_cells, num_free_mines, max_free_mines)
     relative_likelihood = relative_likelihood_func()
 
-    grand_totals = [collections.defaultdict(lambda: 0) for tally in tallies]
-    uncharted_total = collections.defaultdict(lambda: 0)
+    # let a FrontTotal be a mapping: # of mines in front -> total number of
+    # mine configurations across the ENTIRE board in which the given front has
+    # the specified # of mines
+    def new_front_total():
+        return collections.defaultdict(lambda: 0)
+
+    # list of FrontTotals, corresponding to each tally in order
+    grand_totals = [new_front_total() for tally in tallies]
+    # FrontTotal corresponding to the 'other' cells
+    uncharted_total = new_front_total()
 
     tallies = list(tallies) # we need guaranteed iteration order
     # iterate over the cartesian product of sub-tallies from each tally
@@ -1019,11 +1027,14 @@ def combine_fronts(tallies, num_uncharted_cells, at_large_mines):
             # this combination is not possible
             k = 0.
         else:
+            # (relative) # of possible configurations of the 'other' front
             free_factor = relative_likelihood(num_free_mines)
+            # total possible configurations across all fronts (remember: fronts are independent of each other)
             k = free_factor * product(s.count for s in combination)
         
-        for front_total, e in zip(grand_totals, combination):
-            front_total[e.num_mines] += k
+        # update FrontTotal tallies
+        for front_total, subtally in zip(grand_totals, combination):
+            front_total[subtally.num_mines] += k
         uncharted_total[num_free_mines] += k
 
     for tally, front_total in zip(tallies, grand_totals):
