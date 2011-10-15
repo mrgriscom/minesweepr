@@ -54,6 +54,9 @@ class Rule(object):
     """basic representation of an axiom from a minesweeper game: N mines
     contained within a set of M cells.
 
+    only used during the very early stages of the algorithm; quickly converted
+    to 'Rule_'
+
     num_mines -- # of mines
     cells -- list of cells; each 'cell' is a unique, identifying tag that
         represents that cell (string, int, any hashable)
@@ -80,6 +83,8 @@ class Rule(object):
 class Rule_(object):
     """analogue of 'Rule', but containing supercells (sets of 'ordinary' cells
     that only ever appear together).
+
+    this is the common rule form used throughout most of the algorithm
 
     num_mines -- total # of mines
     num_cells -- total # of base cells
@@ -130,7 +135,7 @@ class Rule_(object):
         return len(self.cells_) == 1
 
     def tally(self):
-        """build a FrontTally from this *trivial* rule"""
+        """build a FrontTally from this *trivial* rule only"""
         return FrontTally.from_rule(self)
 
     def __repr__(self):
@@ -139,7 +144,7 @@ class Rule_(object):
 
     @staticmethod
     def mk(num_mines, cells_):
-        """helper method for creating
+        """helper method for creation
 
         num_mines -- total # of mines
         cells_ -- list of cells and supercells, where a supercell is a list of
@@ -179,7 +184,7 @@ def reduce_rules(rules):
 class Reduceable(object):
     """during the logical deduction phase, if all rules are nodes in a graph,
     this represents a directed edge in that graph indicating 'superrule' can
-    be reduced from 'subrule'"""
+    be reduced by 'subrule'"""
 
     def __init__(self, superrule, subrule):
         self.superrule = superrule
@@ -210,6 +215,8 @@ class Reduceable(object):
 
 # todo: doc me
 class CellRulesMap(object):
+    """a utility class mapping cells to the rules they appear in"""
+
     def __init__(self, rules=[]):
         self.map = collections.defaultdict(set)
         self.rules = []
@@ -335,7 +342,10 @@ class Permutation(object):
     """a single permutation of N mines among a set of (super)cells"""
 
     def __init__(self, mapping):
-        """mapping -- a mapping: supercell -> # of mines therein"""
+        """mapping -- a mapping: supercell -> # of mines therein
+
+        cell set is determined implicitly from mapping, so all cells in set
+        must have an entry, even if they have 0 mines"""
         self.mapping = dict(mapping)
 
     def subset(self, subcells):
@@ -389,6 +399,13 @@ class Permutation(object):
         return '{%s}' % ' '.join(cell_frags)
 
 def permute(count, cells, permu=None):
+    """generate all permutations of 'count' mines among 'cells'
+
+    permu -- the sub-permutation in progress, when called as a recursive
+        helper function. not actually a Permutation object, but a set of
+        (key, value) pairs
+    """
+
     def permu_add(*k):
         return permu.union(k)
 
@@ -408,7 +425,24 @@ def permute(count, cells, permu=None):
                     yield p
 
 class PermutationSet(object):
+    """a set of permutations of the same cell set and total # of mines
+
+    may be the full set of possible permutations, or a subset as particular
+    permutations are removed due to outside conflicts
+
+    constrained -- False if the set is the full set of possible permutations;
+        True if the set has since been reduced; accurate ONLY IF the
+        PermutationSet was created with the full set of possibles
+    """
+
     def __init__(self, cells_, k, permus):
+        """
+        cells_ -- set of supercells
+        k -- # of mines
+        permus -- set of 'Permutation's thereof; all permutations must share
+            the same cell set and # of mines! (corresponding to 'cells_' and
+            'k')
+        """
         self.cells_ = cells_
         self.k = k
         self.permus = permus
@@ -416,32 +450,57 @@ class PermutationSet(object):
 
     @staticmethod
     def from_rule(rule):
+        """build from all possible permutations of the given rule"""
         return PermutationSet(rule.cells_, rule.num_mines, set(rule.permute()))
 
     def to_rule(self):
+        """back-construct a Rule_ from this set
+
+        note that the set generated from self.to_rule().from_rule() may not
+        match this set, as it cannot account for permutations removed from
+        this set due to conflicts"""
         return Rule_(self.k, self.cells_)
 
     def __iter__(self):
+        """return an iterator over the set"""
         return self.permus.__iter__()
 
     def remove(self, permu):
+        """remove a permutation from the set, such as if that permutation
+        conflicts with another rule"""
         self.permus.remove(permu)
         self.constrained = True
 
     def empty(self):
+        """return whether the set is empty"""
         return not self.permus
 
     def compatible(self, permu):
+        """return a new PermutationSet containing only the Permutations that
+        are compatible with the given Permutation 'permu'"""
         return PermutationSet(self.cells_, self.k, set(p for p in self.permus if p.compatible(permu)))
 
+    def subset(self, cell_subset):
+        """return a new PermutationSet consisting of the sub-setted
+        permutations from this set"""
+        permu_subset = set(p.subset(cell_subset) for p in self.permus)
+        k_sub = set(p.k() for p in permu_subset)
+        if len(k_sub) > 1:
+            # subset is not valid because permutations differ in # of mines
+            raise ValueError()
+        return PermutationSet(cell_subset, k_sub.pop(), permu_subset)
+
     def decompose(self):
+        """see decompose(); optimizes if set has not been constrained because
+        full permu-sets decompose to themselves"""
         return self._decompose() if self.constrained else [self]
 
     def _decompose(self, k_floor=1):
-        """determine if the permutation set is the cartesian product of
-        N smaller permutation sets; return the decomposition if so
+        """determine if the permutation set is the cartesian product of N
+        smaller permutation sets; return the decomposition if so
 
-        permus must be a subset of 'cells_ choose k' for some k
+        this set may be constrained, in which case at least one subset of the
+        decomposition (if one exists) will also be constrained
         """
         for _k in range(k_floor, int(.5 * len(self.cells_)) + 1):
             for cell_subset in (set_(c) for c in itertools.combinations(self.cells_, _k)):
@@ -458,16 +517,15 @@ class PermutationSet(object):
         return [self]
 
     def split(self, cell_subset):
+        """helper function for decompose(). given a subset of cells, return
+        the two permutation sets for the subset and the set of remaining
+        cells, provided cell_subset is a valid decomposor; raise exception if
+        not"""
         cell_remainder = self.cells_ - cell_subset
-        permu_subset = set(p.subset(cell_subset) for p in self.permus)
-
-        k_sub = set(p.k() for p in permu_subset)
-        if len(k_sub) > 1:
-            # subset cannot be a cartesian divisor; k-values of sub-
-            # permutations differ, so impossible to originate from single
-            # 'choose' operation
-            raise ValueError()
-        k_sub = k_sub.pop()
+        permu_subset = self.subset(cell_subset)
+        # exception thrown if subset cannot be a cartesian divisor; i.e., set
+        # of permutations could not have originated from single 'choose'
+        # operation
 
         # get the remaining permutation sets for each sub-permutation
         permu_remainders = set(map_reduce(self.permus,
@@ -480,8 +538,7 @@ class PermutationSet(object):
             raise ValueError()
         permu_remainders = permu_remainders.pop()
 
-        return (PermutationSet(cell_subset, k_sub, permu_subset),
-                PermutationSet(cell_remainder, self.k - k_sub, permu_remainders))
+        return (permu_subset, PermutationSet(cell_remainder, self.k - permu_subset.k, permu_remainders))
 
     def __repr__(self):
         return str(list(self.permus))
