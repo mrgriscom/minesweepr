@@ -876,7 +876,7 @@ class FrontTally(object):
         'other' cells
 
         num_uncharted_cells -- # of 'other' cells
-        
+        mine_totals -- a mapping suitable for update_weights(): # mines in 'other' region -> relative likelihood
         """
 
         metacell = UnchartedCell(num_uncharted_cells)
@@ -976,9 +976,18 @@ def weight_subtallies(tallies, mine_prevalence, all_cells):
         tally_uncharted = combine_fronts(dyn_tallies, num_uncharted_cells, at_large_mines)
         tallies.add(tally_uncharted)
     else:
-        for tally in dyn_tallies:
-            relative_likelihood = lambda num_mines: nondiscrete_relative_likelihood(mine_prevalence, num_mines, tally.min_mines())
-            tally.scale_weights(relative_likelihood)
+        weight_nondiscrete(dyn_tallies, mine_prevalence)
+
+def weight_nondiscrete(dyn_tallies, mine_prevalence):
+    """weight the relative likelihood of each sub-tally in a 'fixed mine
+    probability / variable # of mines'-style game
+
+    in this scenario, all fronts are completely independent; no front affects
+    the likelihoods for any other front
+    """
+    for tally in dyn_tallies:
+        relative_likelihood = lambda num_mines: nondiscrete_relative_likelihood(mine_prevalence, num_mines, tally.min_mines())
+        tally.scale_weights(relative_likelihood)
 
 def check_count_consistency(tallies, mine_prevalence, all_cells):
     """ensure the min/max mines required across all fronts is compatible with
@@ -1003,8 +1012,8 @@ def combine_fronts(tallies, num_uncharted_cells, at_large_mines):
     """assign relative weights to all sub-tallies in all fronts. because the
     total # of mines is fixed, we must do a combinatorial analysis to
     compute the likelihood of each front containing each possible # of mines.
-    in the process, compute and return the mine count likelihood for the
-    'other' cells, not a part of any front.
+    in the process, compute the mine count likelihood for the 'other' cells,
+    not a part of any front, and return a meta-front encapsulating them.
     """
 
     # an abridged sub-tally: just # of mines and total count -- we don't care about per-cell details
