@@ -3,6 +3,8 @@ import itertools
 import operator
 import math
 
+set_ = frozenset
+
 class InconsistencyError(Exception):
     """raise when a game state is logically inconsistent."""
     pass
@@ -963,6 +965,13 @@ def weight_subtallies(tallies, mine_prevalence, all_cells):
                 subtally.total *= nondiscrete_relative_likelihood(mine_prevalence, num_mines, tally.min_mines())
 
 def check_count_consistency(tallies, mine_prevalence, all_cells):
+    """ensure the min/max mines required across all fronts is compatible with
+    the total # of mines and remaining space available on the board
+
+    in the process, compute and return the remaining available space (# of
+    'other' cells not referenced in any rule)
+    """
+
     min_possible_mines, max_possible_mines = possible_mine_limits(tallies)
     num_uncharted_cells = mine_prevalence.total_cells - sum(len(cell_) for cell_ in all_cells)
 
@@ -975,24 +984,42 @@ def check_count_consistency(tallies, mine_prevalence, all_cells):
     return num_uncharted_cells
 
 def combine_fronts(tallies, num_uncharted_cells, at_large_mines):
-    Subtally = collections.namedtuple('Subtally', ['num_mines', 'count'])
+    """
 
+    """
+
+
+    # an abridged sub-tally: just # of mines and total count -- we don't care about per-cell details
+    Subtally = collections.namedtuple('Subtally', ['num_mines', 'count'])
     def combo(cross_entry):
+        """helper func for iterating over cartesian product of all
+        sub-tallies; abridge each sub-tally"""
         return tuple(Subtally(num_mines, subtally.total) for num_mines, subtally in cross_entry)
 
-    min_possible_mines, _ = possible_mine_limits(tallies)
-    max_free_mines = min(max(at_large_mines - min_possible_mines, 0), num_uncharted_cells)
+    # closure to avoid polluting this function's already crowded scope
+    def relative_likelihood_func():
+        min_possible_mines, _ = possible_mine_limits(tallies)
+        max_free_mines = min(max(at_large_mines - min_possible_mines, 0), num_uncharted_cells)
+        def relative_likelihood(num_free_mines):
+            return discrete_relative_likelihood(num_uncharted_cells, num_free_mines, max_free_mines)
+        return relative_likelihood
+    relative_likelihood = relative_likelihood_func()
+
     grand_totals = [collections.defaultdict(lambda: 0) for tally in tallies]
     uncharted_total = collections.defaultdict(lambda: 0)
-    tallies = list(tallies) # we need guaranteed iteration order
 
+    tallies = list(tallies) # we need guaranteed iteration order
+    # iterate over the cartesian product of sub-tallies from each tally
     for combination in (combo(e) for e in itertools.product(*tallies)):
-        num_free_mines = at_large_mines - sum(s.num_mines for s in combination)
+        num_tallied_mines = sum(s.num_mines for s in combination)
+        # number of mines lying in the 'other' cells
+        num_free_mines = at_large_mines - num_tallied_mines
 
         if num_free_mines < 0 or num_free_mines > num_uncharted_cells:
+            # this combination is not possible
             k = 0.
         else:
-            free_factor = discrete_relative_likelihood(num_uncharted_cells, num_free_mines, max_free_mines)
+            free_factor = relative_likelihood(num_free_mines)
             k = free_factor * product(s.count for s in combination)
         
         for front_total, e in zip(grand_totals, combination):
@@ -1036,9 +1063,12 @@ def discrete_relative_likelihood(n, k, k0):
 
 class UnchartedCell(object):
     """a meta-cell object that represents all the 'other' cells on the board
-    that aren't explicitly mentioned in a rule"""
+    that aren't explicitly mentioned in a rule. see expand_cells()"""
 
     def __init__(self, size):
+        """
+        size -- # of 'other' cells
+        """
         self.size = size
 
     def __len__(self):
@@ -1051,6 +1081,8 @@ class UnchartedCell(object):
             yield None
 
 def expand_cells(cell_probs, other_tag):
+    """back-convert the expected values for all supercells into per-cell
+    probabilities for each original cell"""
     for cell_, p in cell_probs:
         for cell in cell_:
             yield (cell if cell is not None else other_tag, p / len(cell_))
@@ -1060,8 +1092,6 @@ def expand_cells(cell_probs, other_tag):
 
 
 
-
-set_ = frozenset
 
 def fact_div(a, b):
     """return a! / b!"""
