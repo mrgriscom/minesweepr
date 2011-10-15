@@ -242,6 +242,9 @@ class CellRulesMap(object):
         return reduce(operator.or_, (self.map[cell_] for cell_ in rule.cells_), set()) - set([rule])
 
     def interference_edges(self):
+        """return pairs of all rules that overlap each other; each pair is
+        represented twice ((a, b) and (b, a)) to support processing of
+        relationships that are not symmetric"""
         def _interference_edges():
             for rule in self.rules:
                 for rule_ov in self.overlapping_rules(rule):
@@ -249,6 +252,13 @@ class CellRulesMap(object):
         return set(_interference_edges())
 
     def partition(self):
+        """partition the ruleset into disjoint sub-rulesets of related rules.
+
+        that is, all rules in a sub-ruleset are related to each other in some
+        way through some number of overlaps, and no rules from separate
+        sub-rulesets overlap each other. returns a set of partitions, each a
+        set of rules.
+        """
         related_rules = dict((rule, self.overlapping_rules(rule)) for rule in self.rules)
         partitions = set()
         while related_rules:
@@ -262,17 +272,6 @@ class CellRulesMap(object):
     def cells_(self):
         """return all cells contained in ruleset"""
         return set_(self.map.keys())
-
-def graph_traverse(graph, node):
-    nodes = set()
-    _graph_traverse(graph, node, nodes)
-    return set_(nodes)
-
-def _graph_traverse(graph, node, visited):
-    visited.add(node)
-    for neighbor in graph[node]:
-        if neighbor not in visited:
-            _graph_traverse(graph, neighbor, visited)
 
 class RuleReducer(object):
     """manager object that performs the 'logical deduction' phase of
@@ -567,7 +566,16 @@ class PermutedRuleset(object):
         self.permu_map = dict((rule, rule_permuset(rule)) for rule in rules)
 
     def cross_eliminate(self):
+        """determine what permutations are possible for each rule, taking
+        into account the constraints of all overlapping rules. eliminate
+        impossible permutations"""
+
         interferences = self.cell_rules_map.interference_edges()
+
+        # we can't simply iterate through 'interferences', as eliminating a
+        # permutation in a rule may in turn invalidate permutations in other
+        # overlapping rules that have already been processed, thus causing a
+        # cascade effect
         while interferences:
             r, r_ov = interferences.pop()
             changed = False
@@ -577,6 +585,7 @@ class PermutedRuleset(object):
                     # rule. thus, it can never occur
                     self.permu_map[r].remove(permu)
                     changed = True
+
             if self.permu_map[r].empty():
                 # no possible configurations for this rule remain
                 raise InconsistencyError('rule is constrained such that it has no valid mine permutations')
@@ -586,13 +595,25 @@ class PermutedRuleset(object):
                     interferences.add((r_other, r))
 
     def rereduce(self):
-        # postulates that i'm pretty certain about, but can't quite prove
-        # *) among all cartesian decompositions from all rules, none will be reduceable with another
-        #    (decomp'ed rules may have duplicates, though)
-        # *) cartesian decomposition will have effectively re-reduced all rules in the set, even non-
-        #    decomp'ed rules; there will be no possible reductions between a decomp'ed rule and an
-        #    original rule
-        # *) re-permuting amongst the de-comped ruleset will produce the same permutation sets
+        """after computing the possible permutations of the rules, analyze and
+        decompose rules into sub-rules, if possible. this can eliminate
+        dependencies among the initial set of rules, and thus potentially
+        split what would have been one rule-front into several.
+
+        this is analagous to the previous 'reduce_rules' step, but with more
+        advanced logical analysis -- exploting information gleaned from the 
+        permutation phase
+        """
+
+        """
+        postulates that i'm pretty certain about, but can't quite prove
+        *) among all cartesian decompositions from all rules, none will be reduceable with another
+           (decomp'ed rules may have duplicates, though)
+        *) cartesian decomposition will have effectively re-reduced all rules in the set, even non-
+           decomp'ed rules; there will be no possible reductions between a decomp'ed rule and an
+           original rule
+        *) re-permuting amongst the de-comped ruleset will produce the same permutation sets
+        """
 
         superseded_rules = set()
         decompositions = {}
@@ -614,6 +635,7 @@ class PermutedRuleset(object):
         del self.permu_map[rule]
 
     def add_permu_set(self, permu_set):
+        """add a 'decomposed' rule to the ruleset"""
         rule = permu_set.to_rule()
         self.rules.add(rule)
         self.cell_rules_map.add_rule(rule)
@@ -625,12 +647,15 @@ class PermutedRuleset(object):
         return PermutedRuleset(rule_subset, self.permu_map)
 
     def split_fronts(self):
+        """split the ruleset into combinatorially-independent 'fronts'"""
         return set(self.filter(rule_subset) for rule_subset in self.cell_rules_map.partition())
 
     def is_trivial(self):
+        """return whether this ruleset is trivial, i.e., contains only one rule"""
         return len(self.rules) == 1
 
     def trivial_rule(self):
+        """return the singleton rule of this *trivial* ruleset"""
         singleton = _0(self.rules)
 
         # postulate: any singleton rule must also be trivial
@@ -639,10 +664,13 @@ class PermutedRuleset(object):
         return singleton
 
     def enumerate(self):
+        """enumerate all possible mine configurations for this ruleset"""
         for mineconfig in _enumerate(EnumerationState(self)):
             yield mineconfig
 
 def permute_and_interfere(rules):
+    """process the set of rules and analyze the relationships and constraints
+    among them"""
     ruleset = PermutedRuleset(rules)
     ruleset.cross_eliminate()
     ruleset.rereduce()
@@ -956,3 +984,18 @@ def map_reduce(data, emitfunc=lambda rec: [(rec,)], reducefunc=lambda v: v):
 def listify(x):
     """convert object to a list; if not an iterable, wrap as a list of length 1"""
     return list(x) if hasattr(x, '__iter__') else [x]
+
+def graph_traverse(graph, node):
+    """graph traversal algorithm -- given a graph and a node, return the set
+    of nodes that can be reached from 'node', including 'node' itself""" 
+    nodes = set()
+    _graph_traverse(graph, node, nodes)
+    return set_(nodes)
+
+def _graph_traverse(graph, node, visited):
+    """graph traversal helper"""
+    visited.add(node)
+    for neighbor in graph[node]:
+        if neighbor not in visited:
+            _graph_traverse(graph, neighbor, visited)
+
