@@ -846,6 +846,22 @@ class FrontTally(object):
         for entry in collapsed.iteritems():
             yield entry
 
+    def scale_weights(self, scalefunc):
+        """scale each sub-tally's weight/total according to 'scalefunc'
+
+        scalefunc -- function: num_mines -> factor by which to scale the sub-tally for 'num_mines'
+        """
+        for num_mines, subtally in self:
+            subtally.total *= scalefunc(num_mines)
+
+    def update_weights(self, weights):
+        """update each sub-tally's weight/total
+
+        weights -- mapping: num_mines -> new weight of the sub-tally for 'num_mines'
+        """
+        for num_mines, subtally in self:
+            subtally.total = weights[num_mines]
+
     @staticmethod
     def from_rule(rule):
         """tally a trivial rule"""
@@ -961,8 +977,8 @@ def weight_subtallies(tallies, mine_prevalence, all_cells):
         tallies.add(tally_uncharted)
     else:
         for tally in dyn_tallies:
-            for num_mines, subtally in tally:
-                subtally.total *= nondiscrete_relative_likelihood(mine_prevalence, num_mines, tally.min_mines())
+            relative_likelihood = lambda num_mines: nondiscrete_relative_likelihood(mine_prevalence, num_mines, tally.min_mines())
+            tally.scale_weights(relative_likelihood)
 
 def check_count_consistency(tallies, mine_prevalence, all_cells):
     """ensure the min/max mines required across all fronts is compatible with
@@ -1037,9 +1053,9 @@ def combine_fronts(tallies, num_uncharted_cells, at_large_mines):
             front_total[subtally.num_mines] += k
         uncharted_total[num_free_mines] += k
 
+    # upate tallies with adjusted weights
     for tally, front_total in zip(tallies, grand_totals):
-        for num_mines, subtally in tally:
-            subtally.total = front_total[num_mines]
+        tally.update_weights(front_total)
 
     return FrontTally.for_other(num_uncharted_cells, uncharted_total)
 
