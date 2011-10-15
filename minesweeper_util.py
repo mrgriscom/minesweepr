@@ -82,7 +82,8 @@ def generate_rules(board, total_mines, everything_mode):
         the parts of the board that have already been solved; if True, include
         rules to completely describe the state of the board (but still don't
         include _every_ possible rule, as this would include a huge number of
-        degenerate / redundant rules)
+        degenerate / redundant rules). in general, invalid boards will only be
+        detected by everything mode.
 
     in particular, in 'interesting mode':
       * create a rule for each 'number' cell that borders an uncovered cell
@@ -92,7 +93,10 @@ def generate_rules(board, total_mines, everything_mode):
       * create a rule for each 'number' cell
       * create a rule encompassing all known mines
       * create a rule encompassing all uncovered cells
-      * create a rule for all 'blank' / 'zero' cells
+      * create a rule for all cells adjacent to 'blank'/'empty' cells, and not
+        included in the previous rule. thus, this rule will only be present
+        for invalid  boards or boards whose empty areas have not been fully
+        expanded
     """
 
     def _rule(mines, cells):
@@ -103,7 +107,7 @@ def generate_rules(board, total_mines, everything_mode):
             yield mnsw.Rule(mines, [cell.name for cell in cells])
 
     clear_cells = set()    # set of cells that have been unconvered
-    zero_cells = set()     # set of uncovered cells that are blank (not adjacent to mine)
+    zero_cells = set()     # set of cells adjacent to blank/empty/'zero' cells
     relevant_mines = set() # set of known mine cells that interest us
     num_known_mines = 0    # total number of known mines
 
@@ -121,12 +125,12 @@ def generate_rules(board, total_mines, everything_mode):
                     rules.extend(_rule(cell.adj, [nc for nc in neighbors if nc.is_mine() or nc.is_unknown()]))
                     relevant_mines.update(nc for nc in neighbors if nc.is_mine())
             else:
-                zero_cells.add(cell)
+                zero_cells.update(neighbors)
 
     rules.extend(_rule(len(relevant_mines), relevant_mines))
     if everything_mode:
         rules.extend(_rule(0, clear_cells))
-        rules.extend(_rule(0, zero_cells))
+        rules.extend(_rule(0, zero_cells - clear_cells))
 
     num_irrelevant_mines = num_known_mines - len(relevant_mines)
     mine_prevalence = mnsw.MineCount(
