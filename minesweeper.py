@@ -463,8 +463,12 @@ class PermutationSet(object):
         return Rule_(self.k, self.cells_)
 
     def __iter__(self):
-        """return an iterator over the set"""
+        """return an iterator over the set of permutations"""
         return self.permus.__iter__()
+
+    def __contains__(self, p):
+        """membership test for permutation"""
+        return p in self.permus
 
     def remove(self, permu):
         """remove a permutation from the set, such as if that permutation
@@ -685,9 +689,17 @@ class EnumerationState(object):
         """
         if ruleset is not None:
             # normal initialization
+
+            # set of Permutations -- one per rule -- that have been 'fixed' for
+            # the current configuration-in-progress
             self.fixed = set()
+            # subset of ruleset whose permutations are still 'open'
             self.free = dict((rule, set(permu_set)) for rule, permu_set in ruleset.permu_map.iteritems())
+
+            # helper function (closure)
             self.overlapping_rules = lambda rule: ruleset.cell_rules_map.overlapping_rules(rule)
+            # index for constraining overlapping permutations
+            # mapping: (permutation, overlapping rule) -> PermutationSet of valid permutations for overlapping rule
             self.compatible_rule_index = self.build_compatibility_index(ruleset)
             
     def clone(self):
@@ -700,17 +712,23 @@ class EnumerationState(object):
         return state
 
     def build_compatibility_index(self, ruleset):
+        """build the constraint index"""
         index = {}
         for rule, permu_set in ruleset.permu_map.iteritems():
             for permu in permu_set:
                 for rule_ov in self.overlapping_rules(rule):
-                    index[(permu, rule_ov)] = set(ruleset.permu_map[rule_ov].compatible(permu))
+                    index[(permu, rule_ov)] = ruleset.permu_map[rule_ov].compatible(permu)
         return index
 
     def is_complete(self):
+        """return whether all rules have been 'fixed', i.e., the configuration
+        is complete"""
         return not self.free
     
     def __iter__(self):
+        """pick an 'open' rule at random and 'fix' each possible permutation
+        for that rule. in this manner, when done recursively, all valid
+        combinations are enumerated"""
         rule = _0(self.free)
         for permu in self.free[rule]:
             try:
@@ -720,11 +738,14 @@ class EnumerationState(object):
                 pass
 
     def propogate(self, rule, permu):
+        """'fix' a permutation for a given rule"""
         state = self.clone()
         state._propogate(rule, permu)
         return state
 
     def _propogate(self, rule, permu):
+        """'fix' a rule permutation and constrain the available permutations
+        of all overlapping rules"""
         self.fixed.add(permu)
         del self.free[rule]
 
@@ -733,9 +754,13 @@ class EnumerationState(object):
             if related_rule not in self.free:
                 continue
 
-            linked_permus = set(p for p in self.free[related_rule] if p in self.compatible_rule_index[(permu, related_rule)])
-            self.free[related_rule] = linked_permus
+            # PermutationSet of the related rule, constrained _only by_ the rule/permutation just fixed
+            allowed_permus = self.compatible_rule_index[(permu, related_rule)]
+            # further constrain the related rule with this new set -- is now properly constrained by
+            # all fixed rules
+            self.free[related_rule] &= set(allowed_permus)
 
+            linked_permus = self.free[related_rule]
             if len(linked_permus) == 0:
                 # conflict
                 raise ValueError()
@@ -744,9 +769,12 @@ class EnumerationState(object):
                 self._propogate(related_rule, _0(linked_permus))
 
     def mine_config(self):
+        """convert the set of fixed permutations into a single Permutation
+        encompassing the mine configuration for the entire ruleset"""
         return reduce(lambda a, b: a.combine(b), self.fixed)
 
     def enumerate(self):
+        """recursively generate all possible mine configurations for the ruleset"""
         if self.is_complete():
             yield self.mine_config()
         else:
