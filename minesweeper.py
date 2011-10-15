@@ -332,26 +332,46 @@ class RuleReducer(object):
         return self.active_rules
 
 class Permutation(object):
+    """a single permutation of N mines among a set of (super)cells"""
+
     def __init__(self, mapping):
+        """mapping -- a mapping: supercell -> # of mines therein"""
         self.mapping = dict(mapping)
 
     def subset(self, subcells):
+        """return a sub-permutation containing only the cells in 'subcells'"""
         return Permutation((cell, self.mapping[cell]) for cell in subcells)
 
     def compatible(self, permu):
-        overlap = set(self.mapping) & set(permu.mapping)
+        """return whether this permutation is consistent with 'permu', meaning
+        the cells they have in common have matching numbers of mines assigned"""
+        overlap = self.cells() & permu.cells()
         return self.subset(overlap) == permu.subset(overlap)
 
     def combine(self, permu):
-        # assume permu is compatible
+        """return a new permutation by combining this permutation with
+        'permu'
+
+        the permutations must be compatible!"""
         mapping = dict(self.mapping)
         mapping.update(permu.mapping)
         return Permutation(mapping)
 
     def k(self):
+        """return total # mines in this permutation"""
         return sum(self.mapping.values())
 
+    def cells(self):
+        """return set of cells in this permutation"""
+        return set(self.mapping)
+
     def multiplicity(self):
+        """count the # of permutations this permutation would correspond to if
+        each supercell were broken up into singleton cells.
+
+        e.g., N mines in a supercell of M cells has (M choose N) actual
+        configurations
+        """
         return product(choose(len(cell_), k) for cell_, k in self.mapping.iteritems())
 
     def __eq__(self, x):
@@ -814,10 +834,13 @@ def expand_cells(cell_probs, other_tag):
 set_ = frozenset
 
 def fact_div(a, b):
-    """return a!/b!"""
+    """return a! / b!"""
     return product(xrange(b + 1, a + 1)) if a >= b else 1. / fact_div(b, a)
 
 def choose(n, k):
+    """return n choose k
+
+    resilient (though not immune) to integer overflow"""
     if n == 1:
         # optimize by far most-common case
         return 1
@@ -825,9 +848,13 @@ def choose(n, k):
     return fact_div(n, max(k, n - k)) / math.factorial(min(k, n - k))
 
 def _0(iterable):
+    """return the first item of an iterable"""
     return iter(iterable).next()
 
 def product(n):
+    """return the product of a set of numbers
+
+    n -- an iterable of numbers"""
     return reduce(operator.mul, n, 1)
 
 def map_reduce(data, emitfunc=lambda rec: [(rec,)], reducefunc=lambda v: v):
@@ -850,4 +877,5 @@ def map_reduce(data, emitfunc=lambda rec: [(rec,)], reducefunc=lambda v: v):
     return dict((k, reducefunc(v)) for k, v in mapped.iteritems())
 
 def listify(x):
+    """convert object to a list; if not an iterable, wrap as a list of length 1"""
     return list(x) if hasattr(x, '__iter__') else [x]
