@@ -917,16 +917,23 @@ def enumerate_front(front):
     return tally
 
 def cell_probabilities(tallies, mine_prevalence, all_cells):
-    """analyze all FrontTallys as a whole and weight the likelihood of each
-    sub-tally using probability analysis, then return the final expected # of
-    mines per cell for all cells.
+    """generate the final expected values for all cells in all fronts
 
     tallies -- set of 'FrontTally's
-    mine_prevalence -- description of #/frequency of mines in board (from solve())
+    mine_prevalence -- description of # or frequency of mines in board
+        (from solve())
     all_cells -- a set of all supercells from all rules
 
     generates a stream of tuples: (cell, # mines / cell) for all cells
     """
+
+    weight_subtallies(tallies, mine_prevalence, all_cells)
+    # concatenate and emit the cell solutions from all fronts
+    return itertools.chain(*(tally.collapse() for tally in tallies))
+
+def weight_subtallies(tallies, mine_prevalence, all_cells):
+    """analyze all FrontTallys as a whole and weight the likelihood of each
+    sub-tally using probability analysis"""
 
     # True: traditional minesweeper -- fixed total # of mines
     # False: fixed overall probability of mine; total # of mines varies per game
@@ -948,9 +955,6 @@ def cell_probabilities(tallies, mine_prevalence, all_cells):
         for tally in dyn_tallies:
             for num_mines, subtally in tally:
                 subtally.total *= nondiscrete_relative_likelihood(mine_prevalence, num_mines, tally.min_mines())
-
-    # concatenate and emit the cell solutions from all fronts
-    return itertools.chain(*(tally.collapse() for tally in tallies))
 
 def check_count_consistency(stats, mine_prevalence, all_cells):
     min_possible_mines, max_possible_mines = possible_mine_limits(stats)
