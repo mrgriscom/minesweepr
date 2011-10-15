@@ -854,7 +854,13 @@ class FrontTally(object):
 
     @staticmethod
     def for_other(num_uncharted_cells, mine_totals):
-        #todo: ???
+        """create a meta-tally representing the mine distribution of all
+        'other' cells
+
+        num_uncharted_cells -- # of 'other' cells
+        
+        """
+
         metacell = UnchartedCell(num_uncharted_cells)
         return FrontTally(dict((num_mines, FrontSubtally.mk(k, {metacell: num_mines})) for num_mines, k in mine_totals.iteritems()))
 
@@ -956,8 +962,8 @@ def weight_subtallies(tallies, mine_prevalence, all_cells):
             for num_mines, subtally in tally:
                 subtally.total *= nondiscrete_relative_likelihood(mine_prevalence, num_mines, tally.min_mines())
 
-def check_count_consistency(stats, mine_prevalence, all_cells):
-    min_possible_mines, max_possible_mines = possible_mine_limits(stats)
+def check_count_consistency(tallies, mine_prevalence, all_cells):
+    min_possible_mines, max_possible_mines = possible_mine_limits(tallies)
     num_uncharted_cells = mine_prevalence.total_cells - sum(len(cell_) for cell_ in all_cells)
 
     if min_possible_mines > mine_prevalence.total_mines:
@@ -968,19 +974,19 @@ def check_count_consistency(stats, mine_prevalence, all_cells):
 
     return num_uncharted_cells
 
-def combine_fronts(stats, num_uncharted_cells, at_large_mines):
+def combine_fronts(tallies, num_uncharted_cells, at_large_mines):
     Subtally = collections.namedtuple('Subtally', ['num_mines', 'count'])
 
     def combo(cross_entry):
         return tuple(Subtally(num_mines, subtally.total) for num_mines, subtally in cross_entry)
 
-    min_possible_mines, _ = possible_mine_limits(stats)
+    min_possible_mines, _ = possible_mine_limits(tallies)
     max_free_mines = min(max(at_large_mines - min_possible_mines, 0), num_uncharted_cells)
-    grand_totals = [collections.defaultdict(lambda: 0) for st in stats]
+    grand_totals = [collections.defaultdict(lambda: 0) for tally in tallies]
     uncharted_total = collections.defaultdict(lambda: 0)
-    stats = list(stats) # we need guaranteed iteration order
+    tallies = list(tallies) # we need guaranteed iteration order
 
-    for combination in (combo(e) for e in itertools.product(*stats)):
+    for combination in (combo(e) for e in itertools.product(*tallies)):
         num_free_mines = at_large_mines - sum(s.num_mines for s in combination)
 
         if num_free_mines < 0 or num_free_mines > num_uncharted_cells:
@@ -993,14 +999,18 @@ def combine_fronts(stats, num_uncharted_cells, at_large_mines):
             front_total[e.num_mines] += k
         uncharted_total[num_free_mines] += k
 
-    for st, front_total in zip(stats, grand_totals):
-        for num_mines, subtally in st:
+    for tally, front_total in zip(tallies, grand_totals):
+        for num_mines, subtally in tally:
             subtally.total = front_total[num_mines]
 
     return FrontTally.for_other(num_uncharted_cells, uncharted_total)
 
-def possible_mine_limits(stats):
-    return (sum(f(st) for st in stats) for f in (lambda st: st.min_mines(), lambda st: st.max_mines()))
+def possible_mine_limits(tallies):
+    """return the total minimum and maximum possible # of mines across all
+    tallied fronts
+
+    returns (min, max)"""
+    return (sum(f(tally) for tally in tallies) for f in (lambda tally: tally.min_mines(), lambda tally: tally.max_mines()))
 
 def nondiscrete_relative_likelihood(p, k, k0):
     """given binomial probability (p,k,n) => p^k*(1-p)^(n-k),
