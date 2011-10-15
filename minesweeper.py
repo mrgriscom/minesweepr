@@ -213,11 +213,11 @@ class Reduceable(object):
     def __repr__(self):
         return 'Reduceable(superrule=%s, subrule=%s)' % (self.superrule, self.subrule)
 
-# todo: doc me
 class CellRulesMap(object):
     """a utility class mapping cells to the rules they appear in"""
 
     def __init__(self, rules=[]):
+        # a mapping: cell -> list of rules cell appears in
         self.map = collections.defaultdict(set)
         self.rules = []
         self.add_rules(rules)
@@ -237,14 +237,16 @@ class CellRulesMap(object):
             self.map[cell_].remove(rule)
 
     def overlapping_rules(self, rule):
+        """return set of rules that overlap 'rule', i.e., have at least one
+        cell in common"""
         return reduce(operator.or_, (self.map[cell_] for cell_ in rule.cells_), set()) - set([rule])
 
     def interference_edges(self):
-        interferences = set()
-        for rule in self.rules:
-            for rule_ov in self.overlapping_rules(rule):
-                interferences.add((rule, rule_ov))
-        return interferences
+        def _interference_edges():
+            for rule in self.rules:
+                for rule_ov in self.overlapping_rules(rule):
+                    yield (rule, rule_ov)
+        return set(_interference_edges())
 
     def partition(self):
         related_rules = dict((rule, self.overlapping_rules(rule)) for rule in self.rules)
@@ -258,6 +260,7 @@ class CellRulesMap(object):
         return partitions
             
     def cells_(self):
+        """return all cells contained in ruleset"""
         return set_(self.map.keys())
 
 def graph_traverse(graph, node):
@@ -509,7 +512,7 @@ class PermutationSet(object):
                 except ValueError:
                     continue
 
-                # cartesian divisor!
+                # lo, a cartesian divisor!
                 divisors = [permu_subset]
                 divisors.extend(permu_remainder._decompose(_k))
                 return divisors
@@ -544,11 +547,24 @@ class PermutationSet(object):
         return str(list(self.permus))
 
 class PermutedRuleset(object):
+    """a set of rules and the available permutations for each, eliminating
+    permutations which are mutually-inconsistent across the ruleset"""
+
     def __init__(self, rules, permu_map=None):
+        """
+        rules -- ruleset
+        permu_map -- if creating a subset of another PermutedRuleset, will be
+            the permu_map of the parent; for a new PermutedRuleset, will be
+            computed automatically
+        """
         self.rules = rules
         self.cell_rules_map = CellRulesMap(rules)
         self.cells_ = self.cell_rules_map.cells_()
-        self.permu_map = dict((rule, PermutationSet.from_rule(rule)) for rule in rules) if permu_map is None else permu_map
+
+        def rule_permuset(r):
+            return PermutationSet.from_rule(r) if permu_map is None else permu_map[rule]
+        # a mapping: rule -> PermutationSet for that rule
+        self.permu_map = dict((rule, rule_permuset(rule)) for rule in rules)
 
     def cross_eliminate(self):
         interferences = self.cell_rules_map.interference_edges()
@@ -604,7 +620,9 @@ class PermutedRuleset(object):
         self.permu_map[rule] = permu_set
 
     def filter(self, rule_subset):
-        return PermutedRuleset(rule_subset, dict((rule, self.permu_map[rule]) for rule in rule_subset))
+        """return a PermutedRuleset built from this one containing only a
+        subset of rules"""
+        return PermutedRuleset(rule_subset, self.permu_map)
 
     def split_fronts(self):
         return set(self.filter(rule_subset) for rule_subset in self.cell_rules_map.partition())
@@ -614,8 +632,10 @@ class PermutedRuleset(object):
 
     def trivial_rule(self):
         singleton = _0(self.rules)
+
         # postulate: any singleton rule must also be trivial
         assert singleton.is_trivial()
+
         return singleton
 
     def enumerate(self):
