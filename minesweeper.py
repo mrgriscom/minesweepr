@@ -31,7 +31,6 @@ def solve(rules, mine_prevalence, other_tag=None):
     other_tag -- tag used to represent all 'other' cells (all cells not
         mentioned in a rule) in the solution output
     """
-
     rules, all_cells = condense_supercells(rules)
     rules = reduce_rules(rules)
 
@@ -561,7 +560,7 @@ class PermutedRuleset(object):
         self.cells_ = self.cell_rules_map.cells_()
 
         def rule_permuset(r):
-            return PermutationSet.from_rule(r) if permu_map is None else permu_map[rule]
+            return PermutationSet.from_rule(r) if permu_map is None else permu_map[r]
         # a mapping: rule -> PermutationSet for that rule
         self.permu_map = dict((rule, rule_permuset(rule)) for rule in rules)
 
@@ -665,7 +664,7 @@ class PermutedRuleset(object):
 
     def enumerate(self):
         """enumerate all possible mine configurations for this ruleset"""
-        for mineconfig in _enumerate(EnumerationState(self)):
+        for mineconfig in EnumerationState(self).enumerate():
             yield mineconfig
 
 def permute_and_interfere(rules):
@@ -676,28 +675,30 @@ def permute_and_interfere(rules):
     ruleset.rereduce()
     return ruleset
 
-def _enumerate(enum_state):
-    if enum_state.is_complete():
-        yield enum_state.mine_config()
-    else:
-        for next_state in enum_state:
-            for mineconfig in _enumerate(next_state):
-                yield mineconfig
-
 class EnumerationState(object):
-    def __init__(self, ruleset=None, from_state=None):
-        if not from_state:
+    """a helper object to enumerate through all possible mine configurations of
+    a ruleset"""
+
+    def __init__(self, ruleset=None):
+        """
+        ruleset -- None when cloning an existing state
+        """
+        if ruleset is not None:
+            # normal initialization
             self.fixed = set()
             self.free = dict((rule, set(permu_set)) for rule, permu_set in ruleset.permu_map.iteritems())
             self.overlapping_rules = lambda rule: ruleset.cell_rules_map.overlapping_rules(rule)
             self.compatible_rule_index = self.build_compatibility_index(ruleset)
-        else:
-            # clone existing state
-            self.fixed = set(from_state.fixed)
-            self.free = dict((rule, set(permu_set)) for rule, permu_set in from_state.free.iteritems())
-            self.overlapping_rules = from_state.overlapping_rules
-            self.compatible_rule_index = from_state.compatible_rule_index
             
+    def clone(self):
+        """clone this state"""
+        state = EnumerationState()
+        state.fixed = set(self.fixed)
+        state.free = dict((rule, set(permu_set)) for rule, permu_set in self.free.iteritems())
+        state.overlapping_rules = self.overlapping_rules
+        state.compatible_rule_index = self.compatible_rule_index
+        return state
+
     def build_compatibility_index(self, ruleset):
         index = {}
         for rule, permu_set in ruleset.permu_map.iteritems():
@@ -719,7 +720,7 @@ class EnumerationState(object):
                 pass
 
     def propogate(self, rule, permu):
-        state = EnumerationState(from_state=self)
+        state = self.clone()
         state._propogate(rule, permu)
         return state
 
@@ -744,6 +745,14 @@ class EnumerationState(object):
 
     def mine_config(self):
         return reduce(lambda a, b: a.combine(b), self.fixed)
+
+    def enumerate(self):
+        if self.is_complete():
+            yield self.mine_config()
+        else:
+            for next_state in self:
+                for mineconfig in next_state.enumerate():
+                    yield mineconfig
 
 class FrontTally(object):
     def __init__(self, data=None):
