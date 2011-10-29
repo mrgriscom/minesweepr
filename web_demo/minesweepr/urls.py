@@ -5,7 +5,7 @@ from django.conf import settings
 # from django.contrib import admin
 # admin.autodiscover()
 
-urlpatterns = patterns('minesweeper.views',
+urlpatterns = patterns('minesweepr.views',
     (r'^api/minesweeper_solve/$', 'api_solve'),
 )
 

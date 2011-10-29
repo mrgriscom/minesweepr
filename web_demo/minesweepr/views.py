@@ -1,7 +1,7 @@
 from django.http import HttpResponse, HttpResponseRedirect, HttpResponseNotFound
 from django.views.decorators.csrf import csrf_exempt
 import json
-import minesweeper.lib.minesweeper as mnsw
+import minesweepr.lib.minesweeper as mnsw
 import time
 import logging
 
