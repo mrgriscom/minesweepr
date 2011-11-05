@@ -72,7 +72,7 @@ MIDDLEWARE_CLASSES = (
     'django.contrib.messages.middleware.MessageMiddleware',
 )
 
-ROOT_URLCONF = 'minesweepr.urls'
+ROOT_URLCONF = 'urls'
 
 TEMPLATE_DIRS = (
     # Put strings here, like "/home/html/django_templates" or "C:/www/django/templates".
@@ -90,7 +90,24 @@ INSTALLED_APPS = (
     # 'django.contrib.admin',
     # Uncomment the next line to enable admin documentation:
     # 'django.contrib.admindocs',
+    'djcelery',
+    'staticfiles',
+    'minesweepr',
 )
 
-import os.path
-STATIC_DOC_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), 'static'))
+STATIC_URL = '/static/'
+STATIC_ROOT = None
+
+# celery
+
+BROKER_URL = 'amqplib://localhost:5672/0'
+CELERY_RESULT_BACKEND = "amqp"
+
+BROKER_POOL_LIMIT = 10
+CELERYD_CONCURRENCY = 6
+CELERY_DISABLE_RATE_LIMITS = True
+
+import djcelery
+djcelery.setup_loader()
+
+
