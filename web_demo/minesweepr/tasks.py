@@ -1,5 +1,4 @@
 from celery.task import task
-from celery.registry import tasks
 import lib.minesweeper as mnsw
 import time
 
@@ -22,4 +21,3 @@ def minesweeper_solve(payload):
     result['processing_time'] = end - start
 
     return result
-tasks.register(minesweeper_solve)

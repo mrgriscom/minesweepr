@@ -221,6 +221,11 @@ function GameSession (board, canvas, first_safe) {
     $('#solved').hide();
 
     $.post(url, JSON.stringify(this.board.game_state()), function (data) {
+        if (data.error) {
+          alert('sorry, an error occurred [' + data.error + ']; please start a new game');
+          return;
+        }
+
         $('#solving').hide();
         $('#solved').show();
         $('#solve_time').text(data.processing_time.toFixed(3) + 's');
