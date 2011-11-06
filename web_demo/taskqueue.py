@@ -53,14 +53,18 @@ class Pool(threading.Thread):
         self.outq.put((job_id, func, args, kwargs))
 
     def apply(self, func, args=[], kwargs={}, time_limit=None):
-        ans = []
-        def cb(*args):
-            with self.lock:
-                ans.append(args)
-        self.apply_async(cb, func, args, kwargs, time_limit)
-        while not ans:
-            time.sleep(.01)
-        return ans[0]
+        val = []
+        cond = threading.Condition()
+
+        def callback(*args):
+            with cond:
+                val.append(args)
+                cond.notify()
+
+        cond.acquire()
+        self.apply_async(callback, func, args, kwargs, time_limit)
+        cond.wait()
+        return val[0]
 
     def run(self):
         while True:
@@ -69,7 +73,7 @@ class Pool(threading.Thread):
             with self.lock:
                 callback = self.callbacks[job_id]
                 del self.callbacks[job_id]
-            print '<<', job_id, result
+            logging.debug('task %d complete: %s' % (job_id, str((status, result))))
             callback(status, result)
 
     def new_job(self, callback):
@@ -97,17 +101,21 @@ class TaskQueueHTTPGateway(threading.Thread):
 class TaskRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
-            func, args, kwargs, time_limit = self.parse_args()
+            try:
+                func, args, kwargs, time_limit = self.parse_args()
+            except Exception, e:
+                self.send_error(*e.args)
+                return
+
+            status, result = self.server.pool.apply(func, args, kwargs, time_limit)
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': status, 'result': result}))
         except Exception, e:
-            self.send_error(*e.args)
-            return
-
-        status, result = self.server.pool.apply(func, args, kwargs, time_limit)
-
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({'status': status, 'result': result}))
+            logging.exception('unexpected error')
+            self.send_error(500, '%s %s' % (type(e), str(e)))
 
     def parse_args(self):
         try:
@@ -140,7 +148,7 @@ def parse_options():
     return options
 
 if __name__ == "__main__":
-    logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+    logging.basicConfig(stream=sys.stderr, level=logging.DEBUG, format='%(asctime)-15s %(levelname)s %(message)s')
 
     opts = parse_options()
 
