@@ -1,8 +1,6 @@
-from celery.task import task
 import lib.minesweeper as mnsw
 import time
 
-@task
 def minesweeper_solve(payload):
     try:
         mine_p = payload['mine_prob']

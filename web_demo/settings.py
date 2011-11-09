@@ -90,24 +90,10 @@ INSTALLED_APPS = (
     # 'django.contrib.admin',
     # Uncomment the next line to enable admin documentation:
     # 'django.contrib.admindocs',
-    'djcelery',
     'staticfiles',
     'minesweepr',
 )
 
 STATIC_URL = '/static/'
 STATIC_ROOT = None
-
-# celery
-
-BROKER_URL = 'amqplib://localhost:5672/0'
-CELERY_RESULT_BACKEND = "amqp"
-
-BROKER_POOL_LIMIT = 10
-CELERYD_CONCURRENCY = 6
-CELERY_DISABLE_RATE_LIMITS = True
-
-import djcelery
-djcelery.setup_loader()
-
 
