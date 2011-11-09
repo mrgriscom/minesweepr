@@ -92,6 +92,7 @@ INSTALLED_APPS = (
     # 'django.contrib.admindocs',
     'djcelery',
     'staticfiles',
+    'gunicorn',
     'minesweepr',
 )
 

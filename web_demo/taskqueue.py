@@ -2,6 +2,7 @@ from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from SocketServer import ThreadingMixIn
 import multiprocessing as mp
 import threading
+import Queue
 import sys
 import json
 import itertools
@@ -14,61 +15,121 @@ def f(x):
     a = sum(xrange(1, x))
     return '-%d-' % x
 
+#todo: actually call 'func'
 def eval_task(func, args, kwargs):
     try:
         return (True, f(*args, **kwargs))
     except Exception, e:
         return (False, '%s %s' % (type(e), str(e)))
 
-def worker_loop(inq, outq):
+def worker_loop(conn):
     while True:
-        job_id, func, args, kwargs = inq.get()
-        logging.debug('worker %s starting task %d: %s' % (os.getpid(), job_id, str((func, args, kwargs))))
+        job_id, func, args, kwargs = conn.recv()
+
+        def _log(action, args):
+            logging.debug('worker %s %s task %d: %s' % (os.getpid(), action, job_id, str(args)))
+
+        _log('starting', (func, args, kwargs))
         success, result = eval_task(func, args, kwargs)
-        logging.debug('worker %s completed task %d: %s' % (os.getpid(), job_id, str((success, result))))
-        outq.put((job_id, success, result))
+        _log('completed', (success, result))
+        conn.send((job_id, success, result))
 
 class PendingTask(object):
     def __init__(self, callback, time_limit):
-        self.callback = callback
+        self.cb = callback
         self.time_limit = time_limit
         self.received_at = time.time()
+        self.worker = None
 
     def expiry(self):
         return self.received_at + self.time_limit if self.time_limit is not None else None
 
-    def is_expired(self, now=None):
-        expires = self.expiry()
-        if expires is None:
+    def is_expired(self):
+        if self.expiry() is None:
             return False
         else:
-            return (now if now is not None else time.time()) > expires
+            return time.time() > self.expiry()
+
+    def callback(self, status, result):
+        self.cb(status, result, time.time() - self.received_at)
+
+class Worker(threading.Thread):
+    def __init__(self, pool, resultq):
+        threading.Thread.__init__(self)
+        self.daemon = True
+        self.up = True
+
+        self.pool = pool
+        self.resultq = resultq
+        self.conn, self.remote = mp.Pipe()
+        self.w = mp.Process(target=worker_loop, args=[self.remote])
+        self.w.daemon = True
+
+        self.cur_job = None
+
+    def start(self):
+        threading.Thread.start(self)
+        self.w.start()
+
+    def terminate(self):
+        """terminate this worker thread and its associated process"""
+        self.up = False
+        self.remote.close()
+        self.w.terminate()
+
+    def run(self):
+        """main loop; get jobs, hand them to worker process, handle
+        responses"""
+        while self.up:
+            task = self.pool.get_job(self)
+            if not task:
+                continue
+
+            self.conn.send(task)
+            try:
+                while not self.conn.poll(.01):
+                    if not self.up:
+                        raise EOFError
+                resp = self.conn.recv()
+            except EOFError:
+                continue
+            self.pool.relinquish_job(self)
+            self.resultq.put(resp)
+        self.conn.close()
+        logging.debug('worker thread terminated')
 
 class Pool(threading.Thread):
     def __init__(self, num_workers):
         threading.Thread.__init__(self)
-        self.lock = threading.Lock()
+        # lock for task list / task metadata. required whenever accessing:
+        # - pending task list (self.pending)
+        # - current worker for a given task
+        # - current task for a given worker
+        self.lock = threading.RLock()
         self.daemon = True
 
         self.num_workers = num_workers
         self.job_counter = 0
-        self.pending = {}
+        self.pending = {} # mapping of job id -> job metadata for pending jobs
 
-        self.outq = mp.Queue()
-        self.inq = mp.Queue()
-        self.workers = [self.make_worker() for i in range(self.num_workers)]
+        self.jobq = mp.Queue()    #new tasks submitted here for processing
+        self.resultq = mp.Queue() #task results submitted here for processing
+        self.workers = []
 
-    def make_worker(self):
-        w = mp.Process(target=worker_loop, args=[self.outq, self.inq])
-        w.start()
-        return w
+    def start(self):
+        threading.Thread.start(self)
+        for i in range(self.num_workers):
+            self.new_worker()
 
     def apply_async(self, callback, func, args=[], kwargs={}, time_limit=None):
+        """submit a task for execution; allow up to 'time_limit' to finish; provide
+        result via callback function"""
         job_id = self.new_job(callback, time_limit)
         logging.debug('new task %d: %s' % (job_id, str((func, args, kwargs, time_limit))))
-        self.outq.put((job_id, func, args, kwargs))
+        self.jobq.put((job_id, func, args, kwargs))
 
     def apply(self, func, args=[], kwargs={}, time_limit=None):
+        """see apply_async, but block until result is available"""
         val = []
         cond = threading.Condition()
 
@@ -83,25 +144,117 @@ class Pool(threading.Thread):
         return val[0]
 
     def run(self):
+        """main thread -- processes results from workers and timed-out tasks"""
         while True:
-            job_id, success, result = self.inq.get()
-            status = {True: 'success', False: 'exception'}[success]
+            try:
+                job_id, success, result = self.resultq.get(timeout=0.01)
+                self.respond(job_id, success, result)
+            except Queue.Empty:
+                self.purge_stale()
 
-            with self.lock:
-                task = self.pending[job_id]
-                del self.pending[job_id]
+    def respond(self, job_id, success, result):
+        """handle response for a task result completed under normal circumstances"""
+        task = self.pop_job(job_id)
+        if task is None:
+            # too late; already expired
+            logging.debug('received result for job %d already expired' % job_id)
+            return
 
-            clock = time.time()
+        status = {True: 'success', False: 'exception'}[success]
+        logging.debug('task %d complete: %s' % (job_id, str((status, result))))
+        task.callback(status, result)
 
-            logging.debug('task %d complete: %s' % (job_id, str((status, result))))
-            task.callback(status, result, clock - task.received_at)
+    def purge_stale(self):
+        """handle expired tasks"""
+        for job_id, task in self.stale_jobs().iteritems():
+            logging.debug('task %d timed out' % job_id)
+            task.callback('timeout', None)
+            self.kill_task(job_id, task)
+
+    def kill_task(self, job_id, task):
+        """kill the worker currently executing an expired task (if any),
+        and spawn a new worker in its place"""
+        with self.lock:
+            worker = task.worker
+            if worker and worker.cur_job == job_id:
+                logging.debug('expired task still being processed; killing worker %d' % worker.w.pid)
+                worker.terminate()
+                self.new_worker()
 
     def new_job(self, callback, time_limit):
+        """create a pending task entry for a newly-received task"""
         with self.lock:
             job_id = self.job_counter
             self.job_counter += 1
             self.pending[job_id] = PendingTask(callback, time_limit)
             return job_id
+
+    def pop_job(self, job_id):
+        """pop a completed/expired task from the pending tasks table"""
+        with self.lock:
+            try:
+                task = self.pending[job_id]
+                del self.pending[job_id]
+                return task
+            except KeyError:
+                # can happen when a response for this task is in the result queue
+                # but we already expired it before we could process
+                return None
+
+    def stale_jobs(self):
+        """pop and return all tasks that have expired"""
+        with self.lock:
+            stale_ids = [job_id for job_id, task in self.pending.iteritems() if task.is_expired()]
+            return dict((job_id, self.pop_job(job_id)) for job_id in stale_ids)
+
+    def get_job(self, worker):
+        """called by worker thread to get new jobs to execute"""
+        task = self.jobq.get()
+        with self.lock:
+            if not worker.up:
+                # this worker is being terminated (though apparently we still
+                # completed the task that triggered our termination)
+                # return this job to the queue for another worker to handle
+                self.jobq.put(task)
+                return None
+
+            claimed = self.claim_job(task[0], worker)
+            if not claimed:
+                # task is already expired
+                return None
+
+            return task
+
+    def claim_job(self, job_id, worker):
+        """register that a given task is being handled by a worker.
+        once run, this task is officially being run by the given
+        worker; no other worker will handle it and terminating this
+        worker will abort the task (though in rare cases the task will
+        complete before the termination takes effect
+
+        specified job may not exist if already expired; return whether
+        the task should actually be executed"""
+        with self.lock:
+            try:
+                task = self.pending[job_id]
+            except KeyError:
+                return False
+
+            task.worker = worker
+            worker.cur_job = job_id
+            return True
+
+    def relinquish_job(self, worker):
+        """officially indicate that the task has been completed by the worker"""
+        with self.lock:
+            worker.cur_job = None
+
+    def new_worker(self):
+        """create and start a new worker"""
+        worker = Worker(self, self.resultq)
+        self.workers.append(worker)
+        worker.start()
+        logging.debug('spawning new worker')
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     pass
@@ -120,6 +273,8 @@ class TaskQueueHTTPGateway(threading.Thread):
 
 class TaskRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self):
+        """handle request -- synchronously wait for result, since python
+        http server is a 1 thread per request architecture"""
         try:
             try:
                 func, args, kwargs, time_limit = self.parse_args()
@@ -137,7 +292,10 @@ class TaskRequestHandler(BaseHTTPRequestHandler):
             logging.exception('unexpected error')
             self.send_error(500, '%s %s' % (type(e), str(e)))
 
+        print 'done, right?'
+
     def parse_args(self):
+        """parse request payload"""
         try:
             length = int(self.headers.dict['content-length'])
         except KeyError:
@@ -161,6 +319,7 @@ class TaskRequestHandler(BaseHTTPRequestHandler):
         return func, args, kwargs, time_limit
 
 def parse_options():
+    """parse command line options"""
     parser = OptionParser()
     parser.add_option("-p", "--port", dest="port", type='int', default=9690)
     parser.add_option("-w", "--workers", dest="num_workers", type='int', default=3)

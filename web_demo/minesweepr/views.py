@@ -13,6 +13,9 @@ def api_solve(request):
     payload = json.loads(request.raw_post_data)
     logging.debug('>>' + str(payload))
 
+    import threading
+    print threading.current_thread
+
     start = time.time()
     try:
         result = exec_capped(minesweeper_solve, 5., payload)
@@ -29,10 +32,14 @@ def exec_capped(task, time_limit, *args, **kwargs):
     appear to work. could also change time limits on a per-task basis,
     but that feels too far-reaching; this controls time limit on a
     per-execution basis."""
+
+#    from datetime import datetime, timedelta
+#    return task.apply_async(args=args, kwargs=kwargs, expires=datetime.utcnow() + timedelta(seconds=time_limit+3)).get()
+
+    print 'launching...'
     _task = executor(task, *args, **kwargs)
     _task.start()
-    _task.join(time_limit)
-    return _task.resolve()
+    return _task.wait(time_limit)
 
 class executor(threading.Thread):
     """wait for task result in a separate thread, so we can kill it
@@ -53,6 +60,10 @@ class executor(threading.Thread):
         # kill the corresponding CPU process. THIS IS THE MOST
         # IMPORTANT PART!
         revoke(self.invocation.task_id, terminate=True)
+
+    def wait(self, time_limit):
+        self.join(time_limit)
+        return self.resolve()
 
     def resolve(self):
         if self.isAlive():
