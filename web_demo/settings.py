@@ -80,6 +80,7 @@ TEMPLATE_DIRS = (
     # Don't forget to use absolute paths, not relative paths.
 )
 
+import django
 INSTALLED_APPS = (
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -90,10 +91,14 @@ INSTALLED_APPS = (
     # 'django.contrib.admin',
     # Uncomment the next line to enable admin documentation:
     # 'django.contrib.admindocs',
-    'staticfiles',
+    'django.contrib.staticfiles' if django.VERSION >= (1, 3) else 'staticfiles',
     'minesweepr',
 )
 
 STATIC_URL = '/static/'
 STATIC_ROOT = None
 
+try:
+    from localsettings import *
+except ImportError:
+    pass
