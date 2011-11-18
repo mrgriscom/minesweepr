@@ -2,4 +2,4 @@ syntax: glob
 
 *~
 *.pyc
-
+localsettings.py
