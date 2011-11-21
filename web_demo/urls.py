@@ -6,7 +6,7 @@ from django.conf import settings
 # admin.autodiscover()
 
 urlpatterns = patterns('',
-    (r'^', include('minesweepr.urls')),
+    ('^%s' % settings.URL_ROOT, include('minesweepr.urls')),
 )
 
 urlpatterns += patterns('',

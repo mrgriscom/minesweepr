@@ -1,3 +1,5 @@
+import django # for verison sniffing
+
 # Django settings for minesweeper project.
 
 DEBUG = True
@@ -64,6 +66,10 @@ TEMPLATE_LOADERS = (
 #     'django.template.loaders.eggs.Loader',
 )
 
+TEMPLATE_CONTEXT_PROCESSORS = (
+    'django.core.context_processors.static' if django.VERSION >= (1, 3) else 'staticfiles.context_processors.static',
+)
+
 MIDDLEWARE_CLASSES = (
     'django.middleware.common.CommonMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -80,7 +86,6 @@ TEMPLATE_DIRS = (
     # Don't forget to use absolute paths, not relative paths.
 )
 
-import django
 INSTALLED_APPS = (
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -95,6 +100,7 @@ INSTALLED_APPS = (
     'minesweepr',
 )
 
+URL_ROOT = ''
 STATIC_URL = '/static/'
 STATIC_ROOT = None
 

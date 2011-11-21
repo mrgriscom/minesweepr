@@ -1,6 +1,4 @@
 
-SOLVER_URL = '/api/minesweeper_solve/';
-
 $(document).ready(function() {
     $(window).resize(resize_canvas);
     resize_canvas();

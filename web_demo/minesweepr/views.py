@@ -1,5 +1,7 @@
 from django.http import HttpResponse, HttpResponseRedirect, HttpResponseNotFound
 from django.views.decorators.csrf import csrf_exempt
+from django.template import RequestContext
+from django.shortcuts import render_to_response
 import json
 import logging
 import time
@@ -21,3 +23,5 @@ def api_solve(request):
     logging.debug('<<' + str(result))
     return HttpResponse(json.dumps(result), 'text/json')
 
+def template_static(request):
+    return render_to_response(request.path[1:], {}, context_instance=RequestContext(request))
