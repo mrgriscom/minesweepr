@@ -100,9 +100,16 @@ INSTALLED_APPS = (
     'minesweepr',
 )
 
-URL_ROOT = ''
+# root url for project
+BASE_URL = ''
+# root url for pages that will be pre-rendered to static content for deployment
+# i.e., they only exist as templates for reverse-url lookup
+BASE_STATIC_URL = ''
+
 STATIC_URL = '/static/'
 STATIC_ROOT = None
+
+CPU_QUOTA = 5. #s
 
 try:
     from localsettings import *

@@ -16,7 +16,7 @@ def api_solve(request):
 
     start = time.time()
     try:
-        result = exec_capped(minesweeper_solve, 5., payload)
+        result = exec_capped(minesweeper_solve, settings.CPU_QUOTA, payload)
     except ExecTimeOut:
         result = {'error': 'cpu quota exceeded'}
     logging.debug('task queue rtt %.3f' % (time.time() - start))
@@ -25,7 +25,7 @@ def api_solve(request):
     return HttpResponse(json.dumps(result), 'text/json')
 
 def template_static(request):
-    url = request.path[1:]
-    assert url.startswith(settings.URL_ROOT)
-    url = url[len(settings.URL_ROOT):]
-    return render_to_response(url, {}, context_instance=RequestContext(request))
+    url = request.path[1:-1]
+    assert url.startswith(settings.BASE_STATIC_URL)
+    template = url[len(settings.BASE_STATIC_URL):] + '.html'
+    return render_to_response(template, {}, context_instance=RequestContext(request))
