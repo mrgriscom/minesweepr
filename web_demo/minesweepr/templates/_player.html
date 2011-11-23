@@ -1,3 +1,7 @@
+<html>
+<head>
+<title>{% block title %}{% endblock %}</title>
+
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
 <script src="{{ STATIC_URL }}script/minesweeper.js" type="text/javascript"></script>
 <script src="{{ STATIC_URL }}script/autoplay.js" type="text/javascript"></script>
@@ -7,6 +11,9 @@
 SOLVER_URL = '{% url minesweepr.views.api_solve %}';
 
 </script>
+
+</head>
+<body>
 
 <style>
 
@@ -115,3 +122,5 @@ td {
 
   <div id="tooltip">-.--%</div>
 
+</body>
+</html>
