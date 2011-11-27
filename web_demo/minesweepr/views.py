@@ -19,7 +19,7 @@ def api_solve(request):
         result = exec_capped(minesweeper_solve, settings.CPU_QUOTA, payload)
     except ExecTimeOut:
         result = {'error': 'cpu quota exceeded'}
-    logging.debug('task queue rtt %.3f' % (time.time() - start))
+    logging.info('task queue rtt %.3f' % (time.time() - start))
 
     logging.debug('<<' + str(result))
     return HttpResponse(json.dumps(result), 'text/json')
