@@ -28,11 +28,29 @@ body {
 }
 
 #tooltip {
-  background: #ff0;
-  padding: 5px;
+  background: rgba(255, 255, 0, .75);
+  padding: 1px;
   border: 1px solid #aaa;
   position: absolute;
 }  
+
+#tooltip table {
+  border-collapse: collapse;
+}
+
+#tooltip td {
+  text-align: center;
+  padding: 2px;
+}
+
+#tooltip sup {
+  vertical-align: top;
+}
+
+#tooltip th {
+  font-weight: bold;
+  font-size: 10px;
+}
 
 td {
   font-size: small;
@@ -104,9 +122,9 @@ td {
   <tr>
   <td style="vertical-align: bottom;">
 
-  <div style="text-align: right;"><span class="help">(enter)</span>&nbsp;<a id="step" href="#"><b>next move</b></a></div>
-  <div style="text-align: right;"><span class="help">(enter)</span>&nbsp;<nobr><a id="step" href="#"><b>apply solution</b></a></nobr></div>
-  <div style="text-align: right;"><span class="help">(ctrl+left)</span>&nbsp;<nobr><a id="step" href="#"><b>undo</b></a></nobr></div>
+  <div id="stepdiv" style="text-align: right;"><span class="help">(enter)</span>&nbsp;<a id="step" href="#"><b>next move</b></a></div>
+  <div id="applydiv" style="text-align: right;"><span class="help">(enter)</span>&nbsp;<nobr><a id="apply" href="#"><b>apply solution</b></a></nobr></div>
+  <div id="undodiv" style="text-align: right;"><span class="help">(ctrl+left)</span>&nbsp;<nobr><a id="undo" href="#"><b>undo</b></a></nobr></div>
     
   </td>
   </tr>
@@ -192,7 +210,15 @@ td {
     This demo requires HTML canvas
   </canvas>
 
-  <div id="tooltip">-.--%</div>
+  <div id="tooltip">
+    <div id="cellname"></div>
+    <table>
+      <tr><th>MINE</td><th>SAFE</td></tr>
+      <tr><td id="pmine" style="font-weight: bold;"></td><td id="psafe"></td></tr>
+      <tr><td><sup>1/</sup><span id="fracmine"></span></td><td><sup>1/</sup><span id="fracsafe"></span></td></tr>
+      <tr><td id="ratio" colspan="2"></td></tr>
+    </table>
+  </div>
 
 </body>
 </html>

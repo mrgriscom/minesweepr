@@ -351,7 +351,12 @@ function prob_tooltip(e) {
         top: (e.pageY - 15) + "px",
         left: (e.pageX + 15) + "px"
       });
-    $('#tooltip').text((cellname_in_tooltip ? cell.name + ' :: ' : '') + fmt_pct(prob));
+    $('#cellname').text(cellname_in_tooltip ? cell.name : '');
+    $('#pmine').text(fmt_pct(prob));
+    $('#psafe').text(fmt_pct(1. - prob));
+    $('#fracmine').text(fmt_frac(prob));
+    $('#fracsafe').text(fmt_frac(1. - prob));
+    $('#ratio').text(fmt_ratio(prob));
   } else {
     $('#tooltip').hide();
   }
@@ -366,4 +371,29 @@ function resize_canvas() {
 
 function fmt_pct(x) {
   return (100. * x).toFixed(2) + '%'
+}
+
+function fmt_varprec(x, prec) {
+  for (var k = 0; k < prec; k++) {
+    var _x = x * Math.pow(10., k);
+    if (Math.abs(_x - Math.round(_x)) < 1.0e-6) {
+      break;
+    }
+  }
+  return x.toFixed(k);
+}
+
+function fmt_frac(x) {
+  return fmt_varprec(1. / x, 2);
+}
+
+function fmt_ratio(x) {
+  if (x < .5) {
+    var a = 1.;
+    var b = (1. - x) / x;
+  } else {
+    var a = x / (1. - x);
+    var b = 1.;
+  }
+  return fmt_varprec(a, 2) + ':' + fmt_varprec(b, 2);
 }
