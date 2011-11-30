@@ -974,9 +974,9 @@ def weight_subtallies(tallies, mine_prevalence, all_cells):
         at_large_mines = mine_prevalence.total_mines - num_static_mines
 
         tally_uncharted = combine_fronts(dyn_tallies, num_uncharted_cells, at_large_mines)
-        tallies.add(tally_uncharted)
     else:
-        weight_nondiscrete(dyn_tallies, mine_prevalence)
+        tally_uncharted = weight_nondiscrete(dyn_tallies, mine_prevalence)
+    tallies.add(tally_uncharted)
 
 def weight_nondiscrete(dyn_tallies, mine_prevalence):
     """weight the relative likelihood of each sub-tally in a 'fixed mine
@@ -988,6 +988,12 @@ def weight_nondiscrete(dyn_tallies, mine_prevalence):
     for tally in dyn_tallies:
         relative_likelihood = lambda num_mines: nondiscrete_relative_likelihood(mine_prevalence, num_mines, tally.min_mines())
         tally.scale_weights(relative_likelihood)
+
+    # regurgitate the fixed mine probability as the p for 'other' cells. kind of
+    # redundant but saves the client a step. (note that since we don't count total
+    # # cells in this mode, this is not a guarantee that any given game state has
+    # 'other' cells)
+    return FixedProbTally(mine_prevalence)
 
 def check_count_consistency(tallies, mine_prevalence, all_cells):
     """ensure the min/max mines required across all fronts is compatible with
@@ -1101,7 +1107,7 @@ class UnchartedCell(object):
     """a meta-cell object that represents all the 'other' cells on the board
     that aren't explicitly mentioned in a rule. see expand_cells()"""
 
-    def __init__(self, size):
+    def __init__(self, size=1):
         """
         size -- # of 'other' cells
         """
@@ -1115,6 +1121,15 @@ class UnchartedCell(object):
         don't appear at all if in fact there are no 'other' cells"""
         if self.size > 0:
             yield None
+
+class FixedProbTally(object):
+    """a meta-tally to represent when all 'other' cells are uncounted and
+    assumed to have a fixed mine probability"""
+    def __init__(self, p):
+        self.p = p
+
+    def collapse(self):
+        yield (UnchartedCell(), self.p)
 
 def expand_cells(cell_probs, other_tag):
     """back-convert the expected values for all supercells into per-cell
