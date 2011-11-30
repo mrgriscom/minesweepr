@@ -38,13 +38,37 @@ td {
   font-size: small;
 }
 
-#boardconfig {
+#bannerwrap {
+  margin-left: -8px;
   float: left;
-  background: #eee;
+}
+#banner {
+  border-spacing: 8px;
+}
+
+#boardconfig, #playconfig, #gamestats {
   padding: 6px;
   border-radius: 15px;
   -moz-border-radius: 15px;
   -webkit-border-radius: 15px;
+}
+
+#boardconfig {
+  background: #eee;
+}
+
+#playconfig {
+  background: #eee;
+}
+
+#gamestats {
+  border: 3px #ccf solid;
+}
+
+.gamestat {
+  font-weight: bold;
+  text-align: right;
+  vertical-align: top;
 }
 
 {% block content_style %}
@@ -55,7 +79,43 @@ td {
 {% block main %}
 {% endblock %}
 
-  <table id="boardconfig">
+  <div id="bannerwrap">
+  <table id="banner" style="height: 1px;">
+  <tr>
+  <td id="playconfig">
+
+  <table style="height: 100%;">
+  <tr>
+  <td style="vertical-align: top;">
+
+  <nobr><input id="play-auto" name="play" type="radio" value="auto"> <label for="play-auto">Auto play</label></nobr><br>
+  <nobr><input id="play-manual" name="play" type="radio" value="manual"> <label for="play-manual">Manual play</label></nobr>
+
+  </td>
+  </tr>
+  <tr>
+  <td> 
+
+  <nobr><input id="show-mines" name="play" type="checkbox"> <label for="show-mines">Show mines</label></nobr><br>
+  <nobr><input id="show-sol" name="play" type="checkbox"> <label for="show-sol">Show solution</label></nobr>
+
+  </td>
+  </tr>
+  <tr>
+  <td style="vertical-align: bottom;">
+
+  <div style="text-align: right;"><span class="help">(enter)</span>&nbsp;<a id="step" href="#"><b>next move</b></a></div>
+  <div style="text-align: right;"><span class="help">(enter)</span>&nbsp;<nobr><a id="step" href="#"><b>apply solution</b></a></nobr></div>
+  <div style="text-align: right;"><span class="help">(ctrl+left)</span>&nbsp;<nobr><a id="step" href="#"><b>undo</b></a></nobr></div>
+    
+  </td>
+  </tr>
+  </table>
+
+  </td>
+  <td id="boardconfig">
+
+  <table>
     <tr>
       <td valign="top">
 
@@ -108,15 +168,25 @@ td {
     </tr>
   </table>
 
-  <table>
-    <tr><td style="width: 15em;"># mines left: <b><span id="num_mines">&mdash;</span></b></td></tr>
-    <tr><td style="width: 25em;">total accumulated risk: <b><span id="risk">&mdash;</span></b></td></tr>
-    <tr><td style="width: 15em;">
-      <span id="win" style="font-weight: bold; color: green;">WIN</span>
-      <span id="fail" style="font-weight: bold; color: red;">FAIL</span>
+  </td>
+  <td id="gamestats">
+
+  <table style="height: 100%; width: 10em;">
+    <tr><td># mines left:</td><td id="num_mines" class="gamestat">&mdash;</td></tr>
+    <tr><td>total accumulated risk:</td><td id="risk" class="gamestat">&mdash;</td></tr>
+    <tr id="solving" style="height: 35px;"><td style="vertical-align: top;">solving&hellip;</td><td class="gamestat"><img src="{{ STATIC_URL }}img/loading.gif"></td></tr>
+    <tr id="solved"><td><span>solved in:</span></td><td class="gamestat"><span id="solve_time"></span></td></tr>
+    <tr><td colspan="2" height="100%" style="text-align: center; vertical-align: bottom; font-weight: bold; font-size: 48px;">
+      <span id="win" style="color: green;">WIN</span>
+      <span id="fail" style="color: red;">FAIL</span>
     </td></tr>
-    <tr><td><span id="solving">solving&hellip; <img src="{{ STATIC_URL }}img/loading.gif"></span><span id="solved">solved in <span id="solve_time" style="font-weight: bold;"></span></span></td></tr>
+
   </table>
+
+
+  </td></tr>
+  </table>
+  </div>
 
   <canvas id="game_canvas">
     This demo requires HTML canvas
@@ -126,11 +196,3 @@ td {
 
 </body>
 </html>
-
-
-
-<!--
-
-        &nbsp;&nbsp;&nbsp;<span class="help">(enter)</span>&nbsp;<a id="step" href="#"><b>next move</b></a>
-
--->
