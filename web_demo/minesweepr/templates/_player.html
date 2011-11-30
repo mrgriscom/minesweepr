@@ -38,6 +38,15 @@ td {
   font-size: small;
 }
 
+#boardconfig {
+  float: left;
+  background: #eee;
+  padding: 6px;
+  border-radius: 15px;
+  -moz-border-radius: 15px;
+  -webkit-border-radius: 15px;
+}
+
 {% block content_style %}
 {% endblock %}
 
@@ -46,28 +55,25 @@ td {
 {% block main %}
 {% endblock %}
 
-  <table>
+  <table id="boardconfig">
     <tr>
-      <td valign="top" style="background: #eee;">
+      <td valign="top">
 
   <table>
-    <tr>
-      <td colspan="6"><h3>Board</h3></td>
-    </tr>
     <tr>
       <td valign="top">Topology:&nbsp;&nbsp;</td>
       <td>
         <table>
           <tr>
             <td>
-              <input name="topo" type="radio" value="grid"> grid<br>
-              <input name="topo" type="radio" value="torus"> torus<br>
-              <input name="topo" type="radio" value="cube2d"> cube (surface)<br>
+              <input id="topo-grid" name="topo" type="radio" value="grid"> <label for="topo-grid">grid</label><br>
+              <input id="topo-torus" name="topo" type="radio" value="torus"> <label for="topo-torus">torus</label><br>
+              <input id="topo-cube2d" name="topo" type="radio" value="cube2d"> <label for="topo-cube2d">cube (surface)</label><br>
             </td>
             <td>
-              &nbsp;<input name="topo" type="radio" value="cube3d"> cube (3-d)<br>
-              &nbsp;<input name="topo" type="radio" value="hex"> hexa-grid<br>
-              &nbsp;<input name="topo" type="radio" value="grid2"> grid+1<br>
+              &nbsp;<input id="topo-cube3d" name="topo" type="radio" value="cube3d"> <label for="topo-cube3d">cube (3-d)</label><br>
+              &nbsp;<input id="topo-hex" name="topo" type="radio" value="hex"> <label for="topo-hex">hexa-grid</label><br>
+              &nbsp;<input id="topo-grid2" name="topo" type="radio" value="grid2"> <label for="topo-grid2">grid+1</label><br>
             </td>
           </tr>
         </table>
@@ -91,10 +97,9 @@ td {
   </table>
   <table>
     <tr>
-      <td><input id="first_safe" type="checkbox"> 1<sup>st</sup> click is safe</td>
+      <td><input id="first_safe" type="checkbox"> <label for="first_safe">1<sup>st</sup> click is safe</label></td>
       <td align="right">
         &nbsp;&nbsp;&nbsp;<span class="help">(ctrl+enter)</span>&nbsp;<a id="start" href="#"><b>start new game</b></a>
-        &nbsp;&nbsp;&nbsp;<span class="help">(enter)</span>&nbsp;<a id="step" href="#"><b>next move</b></a>
       </td>
     </tr>
   </table>
@@ -103,17 +108,14 @@ td {
     </tr>
   </table>
 
-  <br>
   <table>
-    <tr>
-      <td style="width: 15em;"># mines left: <b><span id="num_mines">&mdash;</span></b></td>
-      <td style="width: 25em;">total accumulated risk: <b><span id="risk">&mdash;</span></b></td>
-      <td style="width: 15em;">
-        <span id="win" style="font-weight: bold; color: green;">WIN</span>
-        <span id="fail" style="font-weight: bold; color: red;">FAIL</span>
-      </td>
-      <td><span id="solving">solving&hellip;</span><span id="solved">solved in <span id="solve_time" style="font-weight: bold;"></span></span></td>
-    </tr>
+    <tr><td style="width: 15em;"># mines left: <b><span id="num_mines">&mdash;</span></b></td></tr>
+    <tr><td style="width: 25em;">total accumulated risk: <b><span id="risk">&mdash;</span></b></td></tr>
+    <tr><td style="width: 15em;">
+      <span id="win" style="font-weight: bold; color: green;">WIN</span>
+      <span id="fail" style="font-weight: bold; color: red;">FAIL</span>
+    </td></tr>
+    <tr><td><span id="solving">solving&hellip; <img src="{{ STATIC_URL }}img/loading.gif"></span><span id="solved">solved in <span id="solve_time" style="font-weight: bold;"></span></span></td></tr>
   </table>
 
   <canvas id="game_canvas">
@@ -124,3 +126,11 @@ td {
 
 </body>
 </html>
+
+
+
+<!--
+
+        &nbsp;&nbsp;&nbsp;<span class="help">(enter)</span>&nbsp;<a id="step" href="#"><b>next move</b></a>
+
+-->
