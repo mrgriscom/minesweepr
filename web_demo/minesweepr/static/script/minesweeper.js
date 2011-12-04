@@ -2,12 +2,14 @@
 HIDDEN_BG = 'rgb(200, 200, 200)';
 VISIBLE_BG = 'rgb(230, 230, 230)';
 MINE_FILL = 'rgba(0, 0, 0, .2)';
+MINE_MARK_STROKE = 'black';
+MINE_MARK_WRONG_STROKE = 'red';
 EXPLODED = 'rgba(255, 0, 0, .8)';
 COUNT_FILL = ['blue', 'green', 'red', 'purple', 'brown', 'cyan', 'orange', 'black'];
 MARGIN = 1;
 MINE_RADIUS = .5;
 FONT_SIZE = .5;
-FONT_OFFSET = .1;
+FONT_OFFSET = ($.browser.mozilla ? .15 : .1);
 FONT_SCALE_LONG = .8;
 
 EPSILON = 1.0e-6;
@@ -59,26 +61,72 @@ function Board (topology) {
       });
   }
 
+  //uncover a cell, triggering any cascades
+  //return whether we uncovered a mine (game over), null if operation not applicable
   this.uncover = function (pos) {
     var cell = this.get_cell(pos);
-    if (!cell.visible) {
+    if (!cell.visible && !cell.flagged) {
       cell.visible = true;
 
       if (cell.state == 'mine') {
-        return false;
+        return true;
       } else {
         if (cell.state == 0) {
           this.for_each_neighbor(pos, function (pos, neighb, board) {
               board.uncover(pos);
             });
         }
-        return true;
+        return false;
       }
     }
   }
 
-  this.flag = function (pos) {
-    this.get_cell(pos).flagged = true;
+  //uncover all neighbors of a cell, provided the indicated number of neighboring mines
+  //have all been flagged (note that these flaggings may be incorrect)
+  //return whether we uncovered a mine (i.e., flagged mines were incorrect), null if cell
+  //did not meet criteria for 'uncover all'
+  this.uncover_neighbors = function(pos) {
+    var cell = this.get_cell(pos);
+
+    if (!cell.visible) {
+      return;
+    }
+
+    var uncovered_neighbors = [];
+    var num_flagged_neighbors = 0;
+    this.for_each_neighbor(pos, function(pos, neighb, board) {
+        if (neighb.flagged) {
+          num_flagged_neighbors++;
+        } else if (!neighb.visible) {
+          uncovered_neighbors.push(pos);
+        }
+      });
+
+    if (num_flagged_neighbors != cell.state || uncovered_neighbors.length == 0) {
+      return;
+    }
+
+    var uncovered_mine = false;
+    var board = this;
+    $.each(uncovered_neighbors, function(i, pos) {
+        var result = board.uncover(pos);
+        if (result) {
+          uncovered_mine = result;
+        }
+      });
+    return uncovered_mine;
+  }
+
+  //'flag' a cell as a mine; mode = true (flag; default), false (clear flag), or 'toggle'
+  //can only flag non-visible cells
+  this.flag = function (pos, mode) {
+    var cell = this.get_cell(pos);
+    if (!cell.visible) {
+      if (mode == null) {
+        mode = true;
+      }
+      cell.flagged = (mode == 'toggle' ? !cell.flagged : mode);
+    }
   }
 
   this.get_cell = function (pos) {
@@ -221,7 +269,10 @@ function Board (topology) {
   }
 
   this.render = function (canvas, params) {
-    params = params || {};
+    var default_params = {
+      show_mines: true,
+    };
+    params = $.extend(default_params, params || {});
 
     var ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -249,14 +300,24 @@ function Cell (name, state, visible, flagged) {
     ctx.fillStyle = (this.visible ? VISIBLE_BG : HIDDEN_BG);
     g.fill(ctx);
 
-    if (this.state == 'mine') {
-      ctx.fillStyle = (this.visible ? EXPLODED : MINE_FILL);
+    var draw_mine = function(mode, material) {
+      ctx[mode == 'fill' ? 'fillStyle' : 'strokeStyle'] = material;
+
       ctx.beginPath();
       ctx.arc(g.center[0], g.center[1], .5 * g.span * MINE_RADIUS, 0, 2*Math.PI, false);
-      if (this.flagged) {
-        ctx.stroke();
+
+      ctx[mode == 'fill' ? 'fill' : 'stroke']();
+    };
+
+    if (this.state == 'mine' && this.visible) {
+      draw_mine('fill', EXPLODED);
+    } else if (this.state == 'mine' && params.show_mines && !this.flagged) {
+      draw_mine('fill', MINE_FILL);
+    } else if (this.flagged) {
+      if (this.state == 'mine' || !params.show_mines) {
+        draw_mine('line', MINE_MARK_STROKE);
       } else {
-        ctx.fill();
+        draw_mine('line', MINE_MARK_WRONG_STROKE);
       }
     } else if (this.state > 0 && this.visible) {
       var label = '' + this.state;

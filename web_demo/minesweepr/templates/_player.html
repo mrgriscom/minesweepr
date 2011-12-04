@@ -82,37 +82,6 @@ td {
   <div id="bannerwrap">
   <table id="banner" style="height: 1px;">
   <tr>
-  <td id="playconfig">
-
-  <table style="height: 100%;">
-  <tr>
-  <td style="vertical-align: top;">
-
-  <nobr><input id="play-auto" name="play" type="radio" value="auto"> <label for="play-auto">Auto play</label></nobr><br>
-  <nobr><input id="play-manual" name="play" type="radio" value="manual"> <label for="play-manual">Manual play</label></nobr>
-
-  </td>
-  </tr>
-  <tr>
-  <td> 
-
-  <nobr><input id="show-mines" name="play" type="checkbox"> <label for="show-mines">Show mines</label></nobr><br>
-  <nobr><input id="show-sol" name="play" type="checkbox"> <label for="show-sol">Show solution</label></nobr>
-
-  </td>
-  </tr>
-  <tr>
-  <td style="vertical-align: bottom;">
-
-  <div id="stepdiv" style="text-align: right;"><span class="help">(enter)</span>&nbsp;<a id="step" href="#"><b>next move</b></a></div>
-  <div id="applydiv" style="text-align: right;"><span class="help">(enter)</span>&nbsp;<nobr><a id="apply" href="#"><b>apply solution</b></a></nobr></div>
-  <div id="undodiv" style="text-align: right;"><span class="help">(ctrl+left)</span>&nbsp;<nobr><a id="undo" href="#"><b>undo</b></a></nobr></div>
-    
-  </td>
-  </tr>
-  </table>
-
-  </td>
   <td id="boardconfig">
 
   <table>
@@ -169,6 +138,28 @@ td {
   </table>
 
   </td>
+  <td id="playconfig">
+
+  <table style="height: 100%;">
+  <tr>
+  <td style="vertical-align: top;">
+
+  <nobr><input id="show_mines" name="play" type="checkbox"> <label for="show_mines">Show mines</label></nobr><br>
+  <nobr><input id="show_sol" name="play" type="checkbox"> <label for="show_sol">Show solution</label></nobr>
+
+  </td>
+  </tr>
+  <tr>
+  <td style="vertical-align: bottom;">
+
+  <div id="stepdiv" style="text-align: right;"><span class="help">(enter)</span>&nbsp;<a id="step" href="#"><b>best move</b></a></div>
+  <div id="undodiv" style="text-align: right;"><span class="help">(ctrl+z)</span>&nbsp;<nobr><a id="undo" href="#"><b>undo</b></a></nobr></div>
+  
+  </td>
+  </tr>
+  </table>
+
+  </td>
   <td id="gamestats">
 
   <table style="height: 100%; width: 10em;">
@@ -192,7 +183,7 @@ td {
     This demo requires HTML canvas
   </canvas>
 
-  <div id="tooltip">-.--%</div>
+  <div id="tooltip"></div>
 
 </body>
 </html>

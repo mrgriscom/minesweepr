@@ -7,12 +7,20 @@ $(document).ready(function() {
     
     $('#start').click(function(e) {
         new_game();
-        e.preventDefault();
+        return false;
       });
 
     $('#step').click(function (e) {
-        game.move();
-        e.preventDefault();
+        GAME.best_move();
+        return false;
+      });
+
+    $('#game_canvas').bind('mouseup', function(e) {
+        manual_move(e);
+        return false;
+      });
+    $('#game_canvas').bind('contextmenu', function(e) {
+        return false;
       });
 
     $("#tooltip").hide();
@@ -25,7 +33,7 @@ $(document).ready(function() {
     $('#solving').hide();
     $('#solved').hide();
 
-    shortcut.add('enter', function() { game.move(); });
+    shortcut.add('enter', function() { GAME.move(); });
     shortcut.add('ctrl+enter', new_game);
 
     set_defaults();
@@ -38,6 +46,9 @@ function set_defaults() {
 
   selectChoice($('input[name="topo"][value="grid"]'));
   selectChoice($('#first_safe'));
+  //  selectChoice($('input[name="play"][value="auto"]'));
+  selectChoice($('#show_mines'));
+  selectChoice($('#show_sol'));
 }
 
 function selectChoice(elem) {
@@ -92,9 +103,9 @@ function new_game() {
   var topo = new_topo(topo_type, width, height, depth);
   var minespec = parsemine($('#mines').val(), topo.num_cells());
   var board = new_board(topo, minespec);
-  game = new GameSession(board, $('#game_canvas')[0], first_safe);
+  GAME = new GameSession(board, $('#game_canvas')[0], first_safe);
 
-  game.start();
+  GAME.start();
 }
 
 function new_topo(type, w, h, d) {
@@ -127,18 +138,100 @@ function new_board(topo, mine_factor, mine_mode) {
   return board;
 }
 
-function GameSession (board, canvas, first_safe) {
+function manual_move(e) {
+  /*
+  var play_mode = $('input[name="play"]:checked').val();
+  if (play_mode != 'manual') {
+    return;
+  }
+  */
+
+  var coord = mousePos(e, GAME.canvas);
+  var pos = GAME.board.cell_from_xy(coord, GAME.canvas);
+  if (!pos) {
+    return;
+  }
+
+  GAME.manual_move(pos, {1: 'sweep', 2: 'sweep-all', 3: 'mark-toggle'}[e.which]);
+}
+
+function GameSession(board, canvas, first_safe) {
   this.board = board;
   this.canvas = canvas;
-  this.first_safe = first_safe;
-  this.cell_probs = [];
-  this.best_guesses = [];
+  this.first_safe = false; //first_safe;
 
   this.start = function() {
     this.remaining_mines = this.board.num_mines;
     this.total_risk = 0.;
     this.first_move = true;
-    this.status = 'in_progress';
+    this.status = 'in_play';
+
+    this.render();
+    this.update_info();
+  };
+
+  this.render = function() {
+    var show_mines = $('#show_mines').attr("checked");
+    var params = {
+      show_mines: show_mines,
+    };
+
+    this.board.render(this.canvas, params);
+    if (this.status == 'in_play') {
+      //      this.render_overlays();
+    }
+  }
+
+  this.manual_move = function(pos, type) {
+    if (this.status != 'in_play') {
+      return;
+    }
+
+    if (type == 'sweep') {
+      var result = this.board.uncover(pos);
+    } else if (type == 'sweep-all') {
+      var result = this.board.uncover_neighbors(pos);
+    } else if (type == 'mark-toggle') {
+      this.board.flag(pos, 'toggle');
+      var result = null;
+    }
+
+    var survived = (result != true);
+    var changed = (result != null);
+
+    if (!survived) {
+      this.status = 'fail';
+    } else if (this.board.is_complete()) {
+      this.status = 'win';
+    }
+
+    //    this.first_move = false;
+    this.update_info();
+    this.render();
+  }
+
+  this.update_info = function() {
+    $('#num_mines').text(this.remaining_mines != null ? this.remaining_mines : '??');
+    $('#risk').text(fmt_pct(this.total_risk));
+
+    $('#win')[this.status == 'win' ? 'show' : 'hide']();
+    $('#fail')[this.status == 'fail' ? 'show' : 'hide']();
+  }
+
+
+}
+
+/*
+function GameSession (board, canvas, first_safe) {
+  this.board = board;
+  this.canvas = canvas;
+  this.first_safe = false; //first_safe;
+
+  this.start = function() {
+    this.remaining_mines = this.board.num_mines;
+    this.total_risk = 0.;
+    this.first_move = true;
+    this.status = 'in_play';
 
     this.render();
     this.update_info();
@@ -154,40 +247,20 @@ function GameSession (board, canvas, first_safe) {
   }
 
   this.move = function() {
-    if (this.status != 'in_progress') {
+    if (this.status != 'in_play') {
       return;
     }
     //check if move in progress
 
     this.action();
-    if (this.status == 'in_progress') {
+    if (this.status == 'in_play') {
       this.solve(SOLVER_URL);
-    }
-  }
-
-  this.apply = function(func) {
-    var names = [];
-    for (var name in this.cell_probs) {
-      names.push(name);
-    }
-    var self = this;
-    this.board.for_each_name(names, function (pos, cell, board) {
-        func(pos, cell, self.cell_probs[cell.name], board);
-      });
-    
-    var other_prob = this.cell_probs['_other'];
-    if (other_prob != null) {
-      this.board.for_each_cell(function (pos, cell, board) {
-          if (!cell.visible && names.indexOf(cell.name) == -1) {
-            func(pos, cell, other_prob, board);
-          }
-        });
     }
   }
 
   this.render = function() {
     this.board.render(this.canvas);
-    if (this.status == 'in_progress') {
+    if (this.status == 'in_play') {
       this.render_overlays();
     }
   }
@@ -229,37 +302,9 @@ function GameSession (board, canvas, first_safe) {
         $('#solve_time').text(data.processing_time.toFixed(3) + 's');
 
         var solution = data.solution;
-        if (solution['_other'] == null && self.board.mine_prob != null) {
-          solution['_other'] = self.board.mine_prob;
-        }
 
         callback(solution);
       }, "json");
-  }
-
-  this.process_probs = function(probs) {
-    this.cell_probs = probs;
-
-    var must_guess = true;
-    var guesses = [];
-    var min_prob = 1.;
-    var self = this;
-    this.apply(function (pos, cell, prob, board) {
-        if (prob < EPSILON) {
-          must_guess = false;
-        } else if (prob < 1. - EPSILON) {
-          guesses.push({name: cell.name, p: prob});
-          min_prob = Math.min(min_prob, prob);
-        }
-      });
-    this.best_guesses = [];
-    if (must_guess) {
-      for (var i = 0; i < guesses.length; i++) {
-        if (guesses[i].p < min_prob + EPSILON) {
-          this.best_guesses.push(guesses[i].name);
-        }
-      }
-    }
   }
 
   this.action = function() {
@@ -297,7 +342,7 @@ function GameSession (board, canvas, first_safe) {
   }
 
   this.update_info = function() {
-    $('#num_mines').text(this.remaining_mines || '??');
+    $('#num_mines').text(this.remaining_mines != null ? this.remaining_mines : '??');
     $('#risk').text(fmt_pct(this.total_risk));
 
     $('#win')[this.status == 'win' ? 'show' : 'hide']();
@@ -309,8 +354,59 @@ function GameSession (board, canvas, first_safe) {
 
   //xy => cell
 }
+*/
+
+function Solution() {
+  this.cell_probs = [];
+  this.best_guesses = [];
+
+  this.apply = function(func) {
+    var names = [];
+    for (var name in this.cell_probs) {
+      names.push(name);
+    }
+    var self = this;
+    this.board.for_each_name(names, function (pos, cell, board) {
+        func(pos, cell, self.cell_probs[cell.name], board);
+      });
+    
+    var other_prob = this.cell_probs['_other'];
+    if (other_prob != null) {
+      this.board.for_each_cell(function (pos, cell, board) {
+          if (!cell.visible && names.indexOf(cell.name) == -1) {
+            func(pos, cell, other_prob, board);
+          }
+        });
+    }
+  }
+
+  this.process_probs = function(probs) {
+    this.cell_probs = probs;
+
+    var must_guess = true;
+    var guesses = [];
+    var min_prob = 1.;
+    var self = this;
+    this.apply(function (pos, cell, prob, board) {
+        if (prob < EPSILON) {
+          must_guess = false;
+        } else if (prob < 1. - EPSILON) {
+          guesses.push({name: cell.name, p: prob});
+          min_prob = Math.min(min_prob, prob);
+        }
+      });
+    this.best_guesses = [];
+    if (must_guess) {
+      for (var i = 0; i < guesses.length; i++) {
+        if (guesses[i].p < min_prob + EPSILON) {
+          this.best_guesses.push(guesses[i].name);
+        }
+      }
+    }
+  }
 
 
+}
 
 
 
@@ -326,20 +422,23 @@ function mousePos(evt, elem) {
 
 var cellname_in_tooltip = false;
 function prob_tooltip(e) {
-  var coord = mousePos(e, game.canvas);
-  var pos = game.board.cell_from_xy(coord, game.canvas);
+  //debug
+  return;
+
+  var coord = mousePos(e, GAME.canvas);
+  var pos = GAME.board.cell_from_xy(coord, GAME.canvas);
 
   var show = false;
   if (pos) {
-    var cell = game.board.get_cell(pos);
-    var prob = game.cell_probs[cell.name];
+    var cell = GAME.board.get_cell(pos);
+    var prob = GAME.cell_probs[cell.name];
     if (prob == null) {
       if (cell.visible) {
         prob = 0.;
       } else if (cell.flagged) {
         prob = 1.;
       } else {
-        prob = game.cell_probs['_other'];
+        prob = GAME.cell_probs['_other'];
       }
     }
 
@@ -360,7 +459,7 @@ function prob_tooltip(e) {
 function resize_canvas() {
   var canvas = $('#game_canvas')[0];
   canvas.width = Math.max(window.innerWidth - 30, 400);
-  canvas.height = Math.max(window.innerHeight - 300, 300);
+  canvas.height = Math.max(window.innerHeight - 250, 300);
   // re-render
 }
 
