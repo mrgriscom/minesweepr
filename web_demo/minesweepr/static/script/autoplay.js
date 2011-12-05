@@ -227,7 +227,7 @@ function GameSession(board, canvas, first_safe) {
     if (this.game_mode() == 'count') {
       var $mines = $('<div><span id="nmines">' + remain_str + '</span></div>');
     } else {
-      var $mines = $('<div>??' + (this.show_mines() ? ' <span id="nmines">(' + remain_str + ')</span>' : '') + '</div>');
+      var $mines = $('<div>' + (this.show_mines() ? '<span id="nmines">(' + remain_str + ')</span>' : '??') + '</div>');
     }
     if (this.show_mines() ? mi.flag_error > 0 : mines_remaining < 0) {
       $mines.find('#nmines').css('color', 'red');
