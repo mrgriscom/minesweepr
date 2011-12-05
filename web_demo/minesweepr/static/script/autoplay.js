@@ -164,10 +164,6 @@ function manual_move(e) {
   GAME.manual_move(pos, {1: 'sweep', 2: 'sweep-all', 3: 'mark-toggle'}[e.which]);
 }
 
-function show_mines_mode() {
-  return $('#show_mines').attr("checked");
-}
-
 function GameSession(board, canvas, first_safe) {
   this.board = board;
   this.canvas = canvas;
@@ -183,9 +179,8 @@ function GameSession(board, canvas, first_safe) {
   };
 
   this.render = function() {
-    var show_mines = (show_mines_mode() || this.status != 'in_play');
     var params = {
-      show_mines: show_mines,
+      show_mines: this.show_mines(),
     };
 
     this.board.render(this.canvas, params);
@@ -226,16 +221,16 @@ function GameSession(board, canvas, first_safe) {
     var mi = this.board.mine_counts();
     var mines_remaining = mi.total - (mi.flagged + mi.flag_error);
     if (this.status == 'win') {
-      var $mines = 0 + (this.game_mode() == 'prob' ? '/' + mi.total : '');
+      mines_remaining = 0;
+    }
+    var remain_str = mines_remaining + (this.game_mode() == 'prob' && mines_remaining != mi.total ? '/' + mi.total : '');
+    if (this.game_mode() == 'count') {
+      var $mines = $('<div><span id="nmines">' + remain_str + '</span></div>');
     } else {
-      if (this.game_mode() == 'count') {
-        var $mines = $('<div><span id="nmines">' + mines_remaining + '</span></div>');
-      } else {
-        var $mines = $('<div>??' + (show_mines_mode() ? ' <span id="nmines">(' + mines_remaining + ')</span>' : '') + '</div>');
-      }
-      if (show_mines_mode() ? mi.flag_error > 0 : mines_remaining < 0) {
-        $mines.find('#nmines').css('color', 'red');
-      }
+      var $mines = $('<div>??' + (this.show_mines() ? ' <span id="nmines">(' + remain_str + ')</span>' : '') + '</div>');
+    }
+    if (this.show_mines() ? mi.flag_error > 0 : mines_remaining < 0) {
+      $mines.find('#nmines').css('color', 'red');
     }
     $('#num_mines').html($mines);
 
@@ -248,6 +243,11 @@ function GameSession(board, canvas, first_safe) {
   this.game_mode = function() {
     return (this.board.mine_prob ? 'prob' : 'count');
   }
+
+  this.show_mines = function() {
+    return $('#show_mines').attr("checked") || this.status != 'in_play';
+  }
+
 }
 
 /*
