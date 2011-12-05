@@ -226,18 +226,56 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.manual_move = function(pos, type) {
+    var game = this;
+    this.action(function() {
+        if (type == 'sweep') {
+          return game.board.uncover(pos);
+        } else if (type == 'sweep-all') {
+          return game.board.uncover_neighbors(pos);
+        } else if (type == 'mark-toggle') {
+          game.board.flag(pos, 'toggle');
+          return null;
+        }
+      });
+  }
+
+  this.best_move = function() {
+    var solu = this.solution;
+    this.action(function() {
+        if (solu) {
+          var survived = true;
+          var action = false; //necessary to keep track of this?
+
+          var guess = null;
+          if (solu.best_guesses.length) {
+            var guess = choose_rand(solu.best_guesses);
+          }
+
+          solu.apply(function (pos, cell, prob, board) {
+              if (prob < EPSILON) {
+                board.flag(pos, false);
+                board.uncover(pos);
+                action = true;
+              } else if (prob > 1. - EPSILON) {
+                board.flag(pos);
+              } else if (cell.name == guess) {
+                survived = !board.uncover(pos);
+                action = true;
+              }
+            });
+          return (action ? !survived : null);
+        } else {
+          return null;
+        }
+      });
+  }
+
+  this.action = function(move) {
     if (this.status != 'in_play') {
       return;
     }
 
-    if (type == 'sweep') {
-      var result = this.board.uncover(pos);
-    } else if (type == 'sweep-all') {
-      var result = this.board.uncover_neighbors(pos);
-    } else if (type == 'mark-toggle') {
-      this.board.flag(pos, 'toggle');
-      var result = null;
-    }
+    var result = move();
 
     var survived = (result != true);
     var changed = (result != null);
@@ -248,11 +286,13 @@ function GameSession(board, canvas, first_safe) {
       this.status = 'win';
     }
 
-    //    this.first_move = false;
+    //TODO: self.total_risk = 1. - (1. - self.total_risk) * (1. - prob);
+
+    //this.first_move = false;
     this.refresh();
     if (this.status == 'in_play' && changed) {
       this.solve();
-    }
+    }    
   }
 
   this.update_info = function() {
@@ -398,25 +438,6 @@ function GameSession (board, canvas, first_safe) {
     }
   }
 
-  this.move = function() {
-    if (this.status != 'in_play') {
-      return;
-    }
-    //check if move in progress
-
-    this.action();
-    if (this.status == 'in_play') {
-      this.solve(SOLVER_URL);
-    }
-  }
-
-  this.render = function() {
-    this.board.render(this.canvas);
-    if (this.status == 'in_play') {
-      this.render_overlays();
-    }
-  }
-
   this.solve = function(url, first) {
     var self = this;
     this.solve_query(url, function (data, board) {
@@ -426,62 +447,6 @@ function GameSession (board, canvas, first_safe) {
         }
         self.render();
       });
-  }
-
-  this.solve_query = function(url, callback) {
-    var self = this;
-
-    $('#solving').show();
-    $('#solved').hide();
-
-    $.post(url, JSON.stringify(this.board.game_state()), function (data) {
-        if (data.error) {
-          alert('sorry, an error occurred [' + data.error + ']; please start a new game');
-          return;
-        }
-
-        $('#solving').hide();
-        $('#solved').show();
-        $('#solve_time').text(data.processing_time.toFixed(3) + 's');
-
-        var solution = data.solution;
-
-        callback(solution);
-      }, "json");
-  }
-
-  this.action = function() {
-    var survived = true;
-
-    var guess = null;
-    if (this.best_guesses.length) {
-      var guess = choose_rand(this.best_guesses);
-    }
-
-    var self = this;
-    this.apply(function (pos, cell, prob, board) {
-        if (prob < EPSILON) {
-          board.uncover(pos);
-        } else if (prob > 1. - EPSILON) {
-          if (!cell.flagged && board.num_mines) {
-            self.remaining_mines--;
-          }
-          board.flag(pos);
-        } else if (cell.name == guess) {
-          survived = this.board.uncover(pos);
-          self.total_risk = 1. - (1. - self.total_risk) * (1. - prob);
-        }
-      });
-
-    if (!survived) {
-      this.status = 'fail';
-    } else if (this.board.is_complete()) {
-      this.status = 'win';
-    }
-
-    this.first_move = false;
-    this.update_info();
-    this.render();
   }
 
 }
