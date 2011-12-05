@@ -72,6 +72,17 @@ td {
   white-space: nowrap;
 }
 
+#canvas_stack {
+  clear: both;
+  position: relative;
+}
+
+#canvas_stack canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
 {% block content_style %}
 {% endblock %}
 
@@ -145,8 +156,9 @@ td {
   <tr>
   <td style="vertical-align: top;">
 
-  <nobr><input id="show_mines" name="play" type="checkbox"> <label for="show_mines">Show mines</label></nobr><br>
-  <nobr><input id="show_sol" name="play" type="checkbox"> <label for="show_sol">Show solution</label></nobr>
+  <nobr><input id="show_mines" type="checkbox"> <label for="show_mines">Show mines</label></nobr><br>
+  <nobr><input id="show_sol" type="checkbox"> <label for="show_sol">Show solution</label></nobr><br>
+  <nobr><input id="highlighting" type="checkbox"> <label for="highlighting">Highlighting</label></nobr>
 
   </td>
   </tr>
@@ -180,9 +192,10 @@ td {
   </table>
   </div>
 
-  <canvas id="game_canvas">
-    This demo requires HTML canvas
-  </canvas>
+  <div id="canvas_stack">
+    <canvas id="game_canvas">This demo requires HTML canvas</canvas>
+    <canvas id="neighbor_layer"></canvas>
+  </div>
 
   <div id="tooltip"></div>
 

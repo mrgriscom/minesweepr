@@ -11,6 +11,8 @@ MINE_RADIUS = .5;
 FONT_SIZE = .5;
 FONT_OFFSET = ($.browser.mozilla ? .15 : .1);
 FONT_SCALE_LONG = .8;
+HIGHLIGHT_CUR_CELL = 'rgba(255, 180, 0, .2)';
+HIGHLIGHT_NEIGHBOR = 'rgba(255, 220, 255, .2)';
 
 EPSILON = 1.0e-6;
 
@@ -693,8 +695,8 @@ function CubeSurfaceTopo (width, height, depth) {
     var _ = this.constants(canvas);
     for (var f = 6; f >= 1; f--) {
       var corner = _.corner({face: f, r: 0, c: 0});
-      var r = Math.floor((p.y - corner.py) / _.dim);
-      var c = Math.floor((p.x - corner.px) / _.dim);
+      var c = Math.floor((p.y - corner.py) / _.dim);
+      var r = Math.floor((p.x - corner.px) / _.dim);
       var ext = this.face_dim(f);
       if (r >= 0 && r < ext.h && c >= 0 && c < ext.w) {
         return {face: f, r: r, c: c};

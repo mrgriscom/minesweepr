@@ -1,5 +1,6 @@
 
 $(document).ready(function() {
+    init_canvas();
     $(window).resize(resize_canvas);
     resize_canvas();
 
@@ -10,31 +11,42 @@ $(document).ready(function() {
         return false;
       });
 
-    $('#step').click(function (e) {
+    $('#step').click(function(e) {
         GAME.best_move();
         return false;
       });
 
-    $('#game_canvas').bind('mouseup', function(e) {
-        manual_move(e);
-        return false;
-      });
-    $('#game_canvas').bind('contextmenu', function(e) {
+    $('#undo').click(function(e) {
+        undo();
         return false;
       });
 
-    $("#tooltip").hide();
-    $('#game_canvas').mousemove(prob_tooltip);
-    $('#game_canvas').mouseout(function(e){
-        $("#tooltip").hide();
+    UI_CANVAS.bind('mouseup', function(e) {
+        manual_move(e);
+        return false;
       });
+    UI_CANVAS.bind('contextmenu', function(e) {
+        return false;
+      });
+
+    $('#show_mines').click(function(e) {
+        GAME.refresh();
+      });
+
+    UI_CANVAS.mousemove(hover_overlays);
+    UI_CANVAS.mouseout(function(e) {
+        hover_overlays(null);
+      });
+    hover_overlays(null);
     $('#win').hide();
     $('#fail').hide();
     $('#solving').hide();
     $('#solved').hide();
 
-    shortcut.add('enter', function() { GAME.move(); });
+    shortcut.add('enter', function() { GAME.best_move(); });
     shortcut.add('ctrl+enter', new_game);
+    shortcut.add('ctrl+z', undo);
+    shortcut.add('ctrl+left', undo);
 
     set_defaults();
     new_game();
@@ -49,6 +61,7 @@ function set_defaults() {
   //  selectChoice($('input[name="play"][value="auto"]'));
   selectChoice($('#show_mines'));
   selectChoice($('#show_sol'));
+  selectChoice($('#highlighting'));
 }
 
 function selectChoice(elem) {
@@ -155,13 +168,16 @@ function manual_move(e) {
   }
   */
 
-  var coord = mousePos(e, GAME.canvas);
-  var pos = GAME.board.cell_from_xy(coord, GAME.canvas);
+  var pos = GAME.mouse_cell(e);
   if (!pos) {
     return;
   }
 
   GAME.manual_move(pos, {1: 'sweep', 2: 'sweep-all', 3: 'mark-toggle'}[e.which]);
+}
+
+function undo() {
+  console.log('not yet');
 }
 
 function GameSession(board, canvas, first_safe) {
@@ -174,9 +190,13 @@ function GameSession(board, canvas, first_safe) {
     this.first_move = true;
     this.status = 'in_play';
 
-    this.render();
-    this.update_info();
+    this.refresh();
   };
+
+  this.refresh = function() {
+    this.update_info();
+    this.render();
+  }
 
   this.render = function() {
     var params = {
@@ -213,8 +233,7 @@ function GameSession(board, canvas, first_safe) {
     }
 
     //    this.first_move = false;
-    this.update_info();
-    this.render();
+    this.refresh();
   }
 
   this.update_info = function() {
@@ -248,6 +267,10 @@ function GameSession(board, canvas, first_safe) {
     return $('#show_mines').attr("checked") || this.status != 'in_play';
   }
 
+  this.mouse_cell = function(e) {
+    var coord = mousePos(e, this.canvas);
+    return this.board.cell_from_xy(coord, this.canvas);
+  }
 }
 
 /*
@@ -443,19 +466,24 @@ function Solution() {
 
 
 
-
+function init_canvas() {
+  UI_CANVAS = $('#canvas_stack canvas').filter(':last');
+}
 
 function mousePos(evt, elem) {
-  return {x: evt.pageX - elem.offsetLeft, y: evt.pageY - elem.offsetTop};
+  return {x: evt.layerX - elem.offsetLeft, y: evt.layerY - elem.offsetTop};
+}
+
+function hover_overlays(e) {
+  var pos = (e ? GAME.mouse_cell(e) : null);
+  prob_tooltip(pos);
+  neighbor_overlay(pos);
 }
 
 var cellname_in_tooltip = false;
-function prob_tooltip(e) {
+function prob_tooltip(pos) {
   //debug
   return;
-
-  var coord = mousePos(e, GAME.canvas);
-  var pos = GAME.board.cell_from_xy(coord, GAME.canvas);
 
   var show = false;
   if (pos) {
@@ -485,11 +513,43 @@ function prob_tooltip(e) {
   }
 }
 
+function neighbor_overlay(pos) {
+  var canvas = $('#neighbor_layer')[0];
+  var ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!$('#highlighting').attr("checked")) {
+    return;
+  }
+  if (!pos) {
+    return;
+  }
+
+  var cur_cell = GAME.board.get_cell(pos);
+  if (!cur_cell.visible || cur_cell.state != 0) {
+    GAME.board.render_overlay(pos, HIGHLIGHT_CUR_CELL, canvas);
+  }
+  GAME.board.for_each_neighbor(pos, function (pos, neighb, board) {
+      if (!neighb.visible) {
+        board.render_overlay(pos, HIGHLIGHT_NEIGHBOR, canvas);
+      }
+    });
+}
+
 function resize_canvas() {
-  var canvas = $('#game_canvas')[0];
-  canvas.width = Math.max(window.innerWidth - 30, 400);
-  canvas.height = Math.max(window.innerHeight - 250, 300);
-  // re-render
+  var w = Math.max(window.innerWidth - 30, 400);
+  var h = Math.max(window.innerHeight - 250, 300); 
+
+  $('#canvas_stack').css('width', w + 'px');
+  $('#canvas_stack').css('height', h + 'px');
+
+  $.each($('#canvas_stack canvas'), function(i, e) {
+      e.width = w;
+      e.height = h;
+    });
+
+  if (window.GAME) {
+    GAME.refresh();
+  }
 }
 
 function fmt_pct(x) {
