@@ -155,13 +155,16 @@ function manual_move(e) {
   GAME.manual_move(pos, {1: 'sweep', 2: 'sweep-all', 3: 'mark-toggle'}[e.which]);
 }
 
+function show_mines_mode() {
+  return $('#show_mines').attr("checked");
+}
+
 function GameSession(board, canvas, first_safe) {
   this.board = board;
   this.canvas = canvas;
   this.first_safe = false; //first_safe;
 
   this.start = function() {
-    this.remaining_mines = this.board.num_mines;
     this.total_risk = 0.;
     this.first_move = true;
     this.status = 'in_play';
@@ -171,7 +174,7 @@ function GameSession(board, canvas, first_safe) {
   };
 
   this.render = function() {
-    var show_mines = $('#show_mines').attr("checked");
+    var show_mines = (show_mines_mode() || this.status != 'in_play');
     var params = {
       show_mines: show_mines,
     };
@@ -211,14 +214,31 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.update_info = function() {
-    $('#num_mines').text(this.remaining_mines != null ? this.remaining_mines : '??');
+    var mi = this.board.mine_counts();
+    var mines_remaining = mi.total - (mi.flagged + mi.flag_error);
+    if (this.status == 'win') {
+      var $mines = 0 + (this.game_mode() == 'prob' ? '/' + mi.total : '');
+    } else {
+      if (this.game_mode() == 'count') {
+        var $mines = $('<div><span id="nmines">' + mines_remaining + '</span></div>');
+      } else {
+        var $mines = $('<div>??' + (show_mines_mode() ? ' <span id="nmines">(' + mines_remaining + ')</span>' : '') + '</div>');
+      }
+      if (show_mines_mode() ? mi.flag_error > 0 : mines_remaining < 0) {
+        $mines.find('#nmines').css('color', 'red');
+      }
+    }
+    $('#num_mines').html($mines);
+
     $('#risk').text(fmt_pct(this.total_risk));
 
     $('#win')[this.status == 'win' ? 'show' : 'hide']();
     $('#fail')[this.status == 'fail' ? 'show' : 'hide']();
   }
 
-
+  this.game_mode = function() {
+    return (this.board.mine_prob ? 'prob' : 'count');
+  }
 }
 
 /*

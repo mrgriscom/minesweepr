@@ -154,14 +154,32 @@ function Board (topology) {
     return m;
   }
 
-  this.is_complete = function () {
+  //return whether the board has been fully cleared. 'strict' mode requires all mines to be flagged
+  this.is_complete = function (strict) {
     var complete = true;
     this.for_each_cell(function (pos, cell, board) {
-        if (!cell.visible && ((cell.state == 'mine') != cell.flagged)) {
+        if (!cell.visible && ((cell.state == 'mine') != (strict ? cell.flagged : true))) {
           complete = false;
         }
       });
     return complete;
+  }
+
+  this.mine_counts = function() {
+    var total_mines = 0;
+    var mines_flagged = 0;
+    var nonmines_flagged = 0;
+    this.for_each_cell(function (pos, cell, board) {
+        if (cell.state == 'mine') {
+          total_mines++;
+          if (cell.flagged) {
+            mines_flagged++;
+          }
+        } else if (cell.flagged) {
+          nonmines_flagged++;
+        }
+      });
+    return {total: total_mines, flagged: mines_flagged, flag_error: nonmines_flagged};
   }
 
   this.safe_cell = function () {
