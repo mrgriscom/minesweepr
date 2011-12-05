@@ -301,15 +301,15 @@ function solve_query(board, url, callback) {
       $('#solved').show();
 
       if (data.error) {
-        alert('sorry, an error occurred [' + data.error + ']; please start a new game');
         var sol = null;
-        var s_time = '!';
+        var s_time = '<span style="font-size: 32px; line-height: 32px;">\u2620</span>';
+        alert('sorry, an error occurred [' + data.error + ']; please start a new game');
       } else {
         var sol = new Solution(data.solution, board);
         var s_time = data.processing_time.toFixed(3) + 's';
       }
       
-      $('#solve_time').text(s_time);
+      $('#solve_time').html(s_time);
       callback(sol);
     }, "json");
 }
