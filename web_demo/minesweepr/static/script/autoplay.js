@@ -32,6 +32,9 @@ $(document).ready(function() {
     $('#show_mines').click(function(e) {
         GAME.refresh();
       });
+    $('#show_sol').click(function(e) {
+        GAME.refresh();
+      });
 
     UI_CANVAS.mousemove(hover_overlays);
     UI_CANVAS.mouseout(function(e) {
@@ -189,13 +192,26 @@ function GameSession(board, canvas, first_safe) {
     this.total_risk = 0.;
     this.first_move = true;
     this.status = 'in_play';
+    this.solution = null;
 
     this.refresh();
+    this.solve();
   };
 
   this.refresh = function() {
     this.update_info();
     this.render();
+  }
+
+  this.solve = function() {
+    var game = this;
+    solve_query(this.board, SOLVER_URL, function (solution) {
+        //if (first) {
+        //  self.prepare_first_move();
+        //}
+        game.solution = solution;
+        game.render();
+      });
   }
 
   this.render = function() {
@@ -204,8 +220,8 @@ function GameSession(board, canvas, first_safe) {
     };
 
     this.board.render(this.canvas, params);
-    if (this.status == 'in_play') {
-      //      this.render_overlays();
+    if (this.status == 'in_play' && this.solution && $('#show_sol').attr('checked')) {
+      this.solution.render(this.canvas);
     }
   }
 
@@ -234,6 +250,9 @@ function GameSession(board, canvas, first_safe) {
 
     //    this.first_move = false;
     this.refresh();
+    if (this.status == 'in_play' && changed) {
+      this.solve();
+    }
   }
 
   this.update_info = function() {
@@ -273,20 +292,101 @@ function GameSession(board, canvas, first_safe) {
   }
 }
 
+function solve_query(board, url, callback) {
+  $('#solving').show();
+  $('#solved').hide();
+  
+  $.post(url, JSON.stringify(board.game_state()), function (data) {
+      $('#solving').hide();
+      $('#solved').show();
+
+      if (data.error) {
+        alert('sorry, an error occurred [' + data.error + ']; please start a new game');
+        var sol = null;
+        var s_time = '!';
+      } else {
+        var sol = new Solution(data.solution, board);
+        var s_time = data.processing_time.toFixed(3) + 's';
+      }
+      
+      $('#solve_time').text(s_time);
+      callback(sol);
+    }, "json");
+}
+
+function Solution(data, board) {
+  this.board = board;
+  this.cell_probs = null;
+  this.best_guesses = null;
+
+  this.apply = function(func) {
+    var names = [];
+    for (var name in this.cell_probs) {
+      names.push(name);
+    }
+    var solu = this;
+    this.board.for_each_name(names, function (pos, cell, board) {
+        func(pos, cell, solu.cell_probs[cell.name], board);
+      });
+    
+    var other_prob = this.cell_probs['_other'];
+    if (other_prob != null) {
+      this.board.for_each_cell(function (pos, cell, board) {
+          if (!cell.visible && names.indexOf(cell.name) == -1) {
+            func(pos, cell, other_prob, board);
+          }
+        });
+    }
+  }
+
+  this.process_probs = function(probs) {
+    this.cell_probs = probs;
+
+    var must_guess = true;
+    var guesses = [];
+    var min_prob = 1.;
+    this.apply(function (pos, cell, prob, board) {
+        if (prob < EPSILON) {
+          must_guess = false;
+        } else if (prob < 1. - EPSILON) {
+          guesses.push({name: cell.name, p: prob});
+          min_prob = Math.min(min_prob, prob);
+        }
+      });
+
+    this.best_guesses = [];
+    if (must_guess) {
+      var solu = this;
+      $.each(guesses, function(i, guess) {
+          if (guess.p < min_prob + EPSILON) {
+            solu.best_guesses.push(guess.name);
+          }
+        });
+    }
+  }
+
+  this.render = function(canvas) {
+    var solu = this;
+    this.apply(function (pos, cell, prob, board) {
+        // still render overlay for cells erroneously flagged, or cells correctly flagged
+        // but we shouldn't know that yet (p != 1.)
+        if (!(cell.flagged && cell.state == 'mine') || prob < 1.) {
+          solu.board.render_overlay(pos, canvas, prob_shade(prob, solu.best_guesses.indexOf(cell.name) != -1), cell.flagged && prob < 1.);
+        }
+      });
+  }
+
+  this.process_probs(data);
+}
+
+
+  
+
+
 /*
 function GameSession (board, canvas, first_safe) {
-  this.board = board;
-  this.canvas = canvas;
-  this.first_safe = false; //first_safe;
-
   this.start = function() {
-    this.remaining_mines = this.board.num_mines;
-    this.total_risk = 0.;
-    this.first_move = true;
-    this.status = 'in_play';
 
-    this.render();
-    this.update_info();
     this.solve(SOLVER_URL, true);
   };
 
@@ -315,15 +415,6 @@ function GameSession (board, canvas, first_safe) {
     if (this.status == 'in_play') {
       this.render_overlays();
     }
-  }
-
-  this.render_overlays = function() {
-    var self = this;
-    this.apply(function (pos, cell, prob, board) {
-        if (!cell.flagged) {
-          board.render_overlay(pos, prob_shade(prob, self.best_guesses.indexOf(cell.name) != -1), self.canvas);
-        }
-      });
   }
 
   this.solve = function(url, first) {
@@ -393,75 +484,8 @@ function GameSession (board, canvas, first_safe) {
     this.render();
   }
 
-  this.update_info = function() {
-    $('#num_mines').text(this.remaining_mines != null ? this.remaining_mines : '??');
-    $('#risk').text(fmt_pct(this.total_risk));
-
-    $('#win')[this.status == 'win' ? 'show' : 'hide']();
-    $('#fail')[this.status == 'fail' ? 'show' : 'hide']();
-  }
-
-
-  //re-size
-
-  //xy => cell
 }
 */
-
-function Solution() {
-  this.cell_probs = [];
-  this.best_guesses = [];
-
-  this.apply = function(func) {
-    var names = [];
-    for (var name in this.cell_probs) {
-      names.push(name);
-    }
-    var self = this;
-    this.board.for_each_name(names, function (pos, cell, board) {
-        func(pos, cell, self.cell_probs[cell.name], board);
-      });
-    
-    var other_prob = this.cell_probs['_other'];
-    if (other_prob != null) {
-      this.board.for_each_cell(function (pos, cell, board) {
-          if (!cell.visible && names.indexOf(cell.name) == -1) {
-            func(pos, cell, other_prob, board);
-          }
-        });
-    }
-  }
-
-  this.process_probs = function(probs) {
-    this.cell_probs = probs;
-
-    var must_guess = true;
-    var guesses = [];
-    var min_prob = 1.;
-    var self = this;
-    this.apply(function (pos, cell, prob, board) {
-        if (prob < EPSILON) {
-          must_guess = false;
-        } else if (prob < 1. - EPSILON) {
-          guesses.push({name: cell.name, p: prob});
-          min_prob = Math.min(min_prob, prob);
-        }
-      });
-    this.best_guesses = [];
-    if (must_guess) {
-      for (var i = 0; i < guesses.length; i++) {
-        if (guesses[i].p < min_prob + EPSILON) {
-          this.best_guesses.push(guesses[i].name);
-        }
-      }
-    }
-  }
-
-
-}
-
-
-
 
 
 
@@ -476,26 +500,20 @@ function mousePos(evt, elem) {
 
 function hover_overlays(e) {
   var pos = (e ? GAME.mouse_cell(e) : null);
-  prob_tooltip(pos);
+  prob_tooltip(pos, e);
   neighbor_overlay(pos);
 }
 
 var cellname_in_tooltip = false;
-function prob_tooltip(pos) {
-  //debug
-  return;
-
+function prob_tooltip(pos, e) {
   var show = false;
   if (pos) {
-    var cell = GAME.board.get_cell(pos);
-    var prob = GAME.cell_probs[cell.name];
-    if (prob == null) {
-      if (cell.visible) {
-        prob = 0.;
-      } else if (cell.flagged) {
-        prob = 1.;
-      } else {
-        prob = GAME.cell_probs['_other'];
+    var prob = null;
+    if (GAME.solution) {
+      var cell = GAME.board.get_cell(pos);
+      prob = GAME.solution.cell_probs[cell.name];
+      if (prob == null && !cell.visible) {
+        prob = GAME.solution.cell_probs['_other'];
       }
     }
 
@@ -526,11 +544,11 @@ function neighbor_overlay(pos) {
 
   var cur_cell = GAME.board.get_cell(pos);
   if (!cur_cell.visible || cur_cell.state != 0) {
-    GAME.board.render_overlay(pos, HIGHLIGHT_CUR_CELL, canvas);
+    GAME.board.render_overlay(pos, canvas, HIGHLIGHT_CUR_CELL);
   }
   GAME.board.for_each_neighbor(pos, function (pos, neighb, board) {
       if (!neighb.visible) {
-        board.render_overlay(pos, HIGHLIGHT_NEIGHBOR, canvas);
+        board.render_overlay(pos, canvas, HIGHLIGHT_NEIGHBOR);
       }
     });
 }

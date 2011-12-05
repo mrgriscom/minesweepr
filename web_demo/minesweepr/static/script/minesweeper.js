@@ -9,7 +9,7 @@ COUNT_FILL = ['blue', 'green', 'red', 'purple', 'brown', 'cyan', 'orange', 'blac
 MARGIN = 1;
 MINE_RADIUS = .5;
 FONT_SIZE = .5;
-FONT_OFFSET = ($.browser.mozilla ? .15 : .1);
+FONT_OFFSET = ($.browser.mozilla ? .15 : .07);
 FONT_SCALE_LONG = .8;
 HIGHLIGHT_CUR_CELL = 'rgba(255, 180, 0, .2)';
 HIGHLIGHT_NEIGHBOR = 'rgba(255, 220, 255, .2)';
@@ -301,8 +301,8 @@ function Board (topology) {
       });
   }
 
-  this.render_overlay = function(pos, fill, canvas) {
-    this.get_cell(pos).render_overlay(this.topology.geom(pos, canvas), fill, canvas.getContext('2d'));
+  this.render_overlay = function(pos, canvas, fill, alert) {
+    this.get_cell(pos).render_overlay(this.topology.geom(pos, canvas), fill, alert, canvas.getContext('2d'));
   }
 
   this.cell_from_xy = function(p, canvas) {
@@ -341,19 +341,31 @@ function Cell (name, state, visible, flagged) {
       }
     } else if (this.state > 0 && this.visible) {
       var label = '' + this.state;
-      var font_size = g.span * FONT_SIZE * (label.length > 1 ? FONT_SCALE_LONG : 1.);
-      ctx.fillStyle = COUNT_FILL[Math.min(this.state - 1, COUNT_FILL.length - 1)];
-      ctx.font = font_size + 'pt sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, g.center[0], g.center[1] + font_size * FONT_OFFSET);
+      var fill = COUNT_FILL[Math.min(this.state - 1, COUNT_FILL.length - 1)];
+      var size = (label.length > 1 ? FONT_SCALE_LONG : 1.);
+      textContext(ctx, g, fill, size)(label);
     }
   }
 
-  this.render_overlay = function (g, fill, ctx) {
+  this.render_overlay = function (g, fill, alert, ctx) {
     ctx.fillStyle = fill;
     g.fill(ctx);
+
+    if (alert) {
+      textContext(ctx, g, 'rgba(0, 0, 0, .6)', 1.4 * MINE_RADIUS, true)('!');
+    }
   }
+}
+
+function textContext(ctx, g, fill, size, bold) {
+  var font_size = size * g.span * FONT_SIZE;
+  ctx.fillStyle = fill;
+  ctx.font = (bold ? 'bold ' : '') + font_size + 'pt sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  return function(label) {
+    ctx.fillText(label, g.center[0], g.center[1] + font_size * FONT_OFFSET);
+  };
 }
 
 
