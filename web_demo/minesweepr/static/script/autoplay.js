@@ -86,11 +86,22 @@ function topoChanged(e) {
 }
 
 function parsemine(raw, surface_area) {
-  if (raw[0] == '*') {
-    return Math.round(surface_area * +raw.substring(1) * .01);
+  if (raw[raw.length - 1] == '%') {
+    var mode = 'prob';
+    raw = raw.substring(0, raw.length - 1);
   } else {
-    return +raw;
+    var mode = 'count';
   }
+
+  var k = +raw;
+
+  if (mode == 'prob') {
+    k *= 0.01;
+  } else if (mode == 'count' && k < 1.) {
+    k = Math.round(surface_area * k);
+  }
+
+  return {mode: mode, k: k};
 }
 
 function new_game() {
@@ -130,11 +141,9 @@ function new_topo(type, w, h, d) {
   }
 }
 
-function new_board(topo, mine_factor, mine_mode) {
-  mine_mode = mine_mode || (mine_factor >= 1. ? 'count' : 'prob');
-
+function new_board(topo, minespec) {
   board = new Board(topo);
-  board[{'count': 'populate_n', 'prob': 'populate_p'}[mine_mode]](mine_factor);
+  board[{'count': 'populate_n', 'prob': 'populate_p'}[minespec.mode]](minespec.k);
   return board;
 }
 
