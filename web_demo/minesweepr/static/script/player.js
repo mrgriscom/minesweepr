@@ -68,7 +68,7 @@ function set_defaults() {
   selectChoice($('#first_safe'));
   selectChoice($('#play_auto'));
   selectChoice($('#play_manual'));
-  selectChoice($('#show_mines'));
+  selectChoice($('#show_mines'), false);
   selectChoice($('#show_sol'));
   selectChoice($('#highlighting'));
 }
@@ -77,8 +77,8 @@ function get_setting(name) {
   return $('#' + name).attr('checked');
 }
 
-function selectChoice(elem) {
-  elem.attr('checked', true);
+function selectChoice(elem, enabled) {
+  elem.attr('checked', enabled != null ? enabled : true);
   elem.trigger('change');
 }
 
