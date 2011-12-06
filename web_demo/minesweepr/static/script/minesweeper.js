@@ -64,28 +64,28 @@ function Board (topology) {
   }
 
   //uncover a cell, triggering any cascades
-  //return whether we uncovered a mine (game over), null if operation not applicable
+  //return whether we survived, null if operation not applicable
   this.uncover = function (pos) {
     var cell = this.get_cell(pos);
     if (!cell.visible && !cell.flagged) {
       cell.visible = true;
 
       if (cell.state == 'mine') {
-        return true;
+        return false;
       } else {
         if (cell.state == 0) {
           this.for_each_neighbor(pos, function (pos, neighb, board) {
               board.uncover(pos);
             });
         }
-        return false;
+        return true;
       }
     }
   }
 
   //uncover all neighbors of a cell, provided the indicated number of neighboring mines
   //have all been flagged (note that these flaggings may be incorrect)
-  //return whether we uncovered a mine (i.e., flagged mines were incorrect), null if cell
+  //return whether we survived (i.e., flagged mines were all correct), null if cell
   //did not meet criteria for 'uncover all'
   this.uncover_neighbors = function(pos) {
     var cell = this.get_cell(pos);
@@ -108,15 +108,15 @@ function Board (topology) {
       return;
     }
 
-    var uncovered_mine = false;
+    var survived = true;
     var board = this;
     $.each(uncovered_neighbors, function(i, pos) {
         var result = board.uncover(pos);
-        if (result) {
-          uncovered_mine = result;
+        if (!result) {
+          survived = false;
         }
       });
-    return uncovered_mine;
+    return survived;
   }
 
   //'flag' a cell as a mine; mode = true (flag; default), false (clear flag), or 'toggle'

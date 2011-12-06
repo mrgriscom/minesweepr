@@ -266,11 +266,11 @@ function GameSession(board, canvas, first_safe) {
               } else if (prob > 1. - EPSILON) {
                 board.flag(pos);
               } else if (cell.name == guess) {
-                survived = !board.uncover(pos);
+                survived = board.uncover(pos);
                 action = true;
               }
             });
-          return (action ? !survived : null);
+          return (action ? survived : null);
         } else {
           return null;
         }
@@ -284,8 +284,8 @@ function GameSession(board, canvas, first_safe) {
 
     var result = move();
 
-    var survived = (result != true);
     var changed = (result != null);
+    var survived = (result || !changed);
 
     if (!survived) {
       this.status = 'fail';
