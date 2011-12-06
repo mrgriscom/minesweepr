@@ -37,7 +37,7 @@ $(document).ready(function() {
       });
     
     $('#play_auto').click(function(e) {
-        var enabled = $('#play_auto').attr('checked');
+        var enabled = get_setting('play_auto');
         $('#step')[enabled ? 'removeClass' : 'addClass']('disabled');
       });
 
@@ -71,6 +71,10 @@ function set_defaults() {
   selectChoice($('#show_mines'));
   selectChoice($('#show_sol'));
   selectChoice($('#highlighting'));
+}
+
+function get_setting(name) {
+  return $('#' + name).attr('checked');
 }
 
 function selectChoice(elem) {
@@ -131,7 +135,7 @@ function new_game() {
   var width = +$('#width').val();
   var height = +$('#height').val();
   var depth = +$('#depth').val();
-  var first_safe = $('#first_safe').attr("checked");
+  var first_safe = get_setting('first_safe');
 
   var topo = new_topo(topo_type, width, height, depth);
   var minespec = parsemine($('#mines').val(), topo.num_cells());
@@ -219,13 +223,13 @@ function GameSession(board, canvas, first_safe) {
     };
 
     this.board.render(this.canvas, params);
-    if (this.status == 'in_play' && this.solution && $('#show_sol').attr('checked')) {
+    if (this.show_solution()) {
       this.solution.render(this.canvas);
     }
   }
 
   this.manual_move = function(pos, type) {
-    if (!$('#play_manual').attr('checked')) {
+    if (!get_setting('play_manual')) {
       return;
     }
 
@@ -243,7 +247,7 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.best_move = function() {
-    if (!$('#play_auto').attr('checked')) {
+    if (!get_setting('play_auto')) {
       return;
     }
 
@@ -330,7 +334,11 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.show_mines = function() {
-    return $('#show_mines').attr("checked") || this.status != 'in_play';
+    return get_setting('show_mines') || this.status != 'in_play';
+  }
+
+  this.show_solution = function() {
+    return get_setting('show_sol') && this.solution && this.status == 'in_play';
   }
 
   this.mouse_cell = function(e) {
@@ -479,25 +487,28 @@ function hover_overlays(e) {
 var cellname_in_tooltip = false;
 function prob_tooltip(pos, e) {
   var show = false;
-  if (pos) {
+  if (pos && GAME.show_solution()) {
     var prob = null;
-    if (GAME.solution) {
-      var cell = GAME.board.get_cell(pos);
-      prob = GAME.solution.cell_probs[cell.name];
-      if (prob == null && !cell.visible) {
-        prob = GAME.solution.cell_probs['_other'];
-      }
+    var cell = GAME.board.get_cell(pos);
+    prob = GAME.solution.cell_probs[cell.name];
+    if (prob == null && !cell.visible) {
+      prob = GAME.solution.cell_probs['_other'];
     }
 
-    show = (cellname_in_tooltip || (prob > EPSILON && prob < 1. - EPSILON));
+    show = (prob > EPSILON && prob < 1. - EPSILON);
   }
+
+  if (cellname_in_tooltip && pos) {
+    show = true;
+  }
+
   if (show) {
     $("#tooltip").show();
     $("#tooltip").css({
         top: (e.pageY - 15) + "px",
         left: (e.pageX + 15) + "px"
       });
-    $('#tooltip').text((cellname_in_tooltip ? cell.name + ' :: ' : '') + fmt_pct(prob));
+    $('#tooltip').text((cellname_in_tooltip ? cell.name + ' :: ' : '') + (prob != null ? fmt_pct(prob) : '--'));
   } else {
     $('#tooltip').hide();
   }
@@ -507,7 +518,7 @@ function neighbor_overlay(pos) {
   var canvas = $('#neighbor_layer')[0];
   var ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!$('#highlighting').attr("checked")) {
+  if (!get_setting('highlighting')) {
     return;
   }
   if (!pos) {
