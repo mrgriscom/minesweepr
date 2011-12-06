@@ -27,6 +27,10 @@ body {
   color: grey;
 }
 
+.disabled {
+  color: grey;
+}
+
 #tooltip {
   background: rgba(255, 255, 0, .75);
   padding: 3px;
@@ -157,6 +161,8 @@ td {
   <tr>
   <td style="vertical-align: top;">
 
+  <nobr><input id="play_auto" type="checkbox"> <label for="play_auto">Auto play</label></nobr><br>
+  <nobr><input id="play_manual" type="checkbox"> <label for="play_manual">Manual play</label></nobr><br>
   <nobr><input id="show_mines" type="checkbox"> <label for="show_mines">Show mines</label></nobr><br>
   <nobr><input id="show_sol" type="checkbox"> <label for="show_sol">Show solution</label></nobr><br>
   <nobr><input id="highlighting" type="checkbox"> <label for="highlighting">Highlighting</label></nobr>

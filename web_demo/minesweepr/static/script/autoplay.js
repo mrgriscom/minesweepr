@@ -35,6 +35,11 @@ $(document).ready(function() {
     $('#show_sol').click(function(e) {
         GAME.refresh();
       });
+    
+    $('#play_auto').click(function(e) {
+        var enabled = $('#play_auto').attr('checked');
+        $('#step')[enabled ? 'removeClass' : 'addClass']('disabled');
+      });
 
     UI_CANVAS.mousemove(hover_overlays);
     UI_CANVAS.mouseout(function(e) {
@@ -61,7 +66,8 @@ function set_defaults() {
 
   selectChoice($('input[name="topo"][value="grid"]'));
   selectChoice($('#first_safe'));
-  //  selectChoice($('input[name="play"][value="auto"]'));
+  selectChoice($('#play_auto'));
+  selectChoice($('#play_manual'));
   selectChoice($('#show_mines'));
   selectChoice($('#show_sol'));
   selectChoice($('#highlighting'));
@@ -164,13 +170,6 @@ function new_board(topo, minespec) {
 }
 
 function manual_move(e) {
-  /*
-  var play_mode = $('input[name="play"]:checked').val();
-  if (play_mode != 'manual') {
-    return;
-  }
-  */
-
   var pos = GAME.mouse_cell(e);
   if (!pos) {
     return;
@@ -226,6 +225,10 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.manual_move = function(pos, type) {
+    if (!$('#play_manual').attr('checked')) {
+      return;
+    }
+
     var game = this;
     this.action(function() {
         if (type == 'sweep') {
@@ -240,6 +243,10 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.best_move = function() {
+    if (!$('#play_auto').attr('checked')) {
+      return;
+    }
+
     var solu = this.solution;
     this.action(function() {
         if (solu) {
