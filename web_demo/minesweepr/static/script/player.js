@@ -201,9 +201,12 @@ function GameSession(board, canvas, first_safe) {
     this.solve();
   };
 
-  this.refresh = function() {
-    this.update_info();
+  this.refresh = function(redraw_only) {
+    if (!redraw_only) {
+      this.update_info();
+    }
     this.render();
+    TOOLTIP_UPDATE();
   }
 
   this.solve = function() {
@@ -213,7 +216,7 @@ function GameSession(board, canvas, first_safe) {
         //  self.prepare_first_move();
         //}
         game.solution = solution;
-        game.render();
+        game.refresh(true);
       });
   }
 
@@ -479,13 +482,23 @@ function mousePos(evt, elem) {
 }
 
 function hover_overlays(e) {
-  var pos = (e ? GAME.mouse_cell(e) : null);
-  prob_tooltip(pos, e);
+  if (e) {
+    var xy = {x: e.pageX, y: e.pageY};
+    var pos = GAME.mouse_cell(e);
+  } else {
+    var xy = null;
+    var pos = null;
+  }
   neighbor_overlay(pos);
+  TOOLTIP_UPDATE = function() {
+    prob_tooltip(pos, xy);
+  };
+  TOOLTIP_UPDATE();
 }
 
+var TOOLTIP_UPDATE = function(){};
 var cellname_in_tooltip = false;
-function prob_tooltip(pos, e) {
+function prob_tooltip(pos, mousePos) {
   var show = false;
   if (pos && GAME.show_solution()) {
     var prob = null;
@@ -505,8 +518,8 @@ function prob_tooltip(pos, e) {
   if (show) {
     $("#tooltip").show();
     $("#tooltip").css({
-        top: (e.pageY - 15) + "px",
-        left: (e.pageX + 15) + "px"
+        top: (mousePos.y - 15) + "px",
+        left: (mousePos.x + 15) + "px"
       });
     $('#tooltip').text((cellname_in_tooltip ? cell.name + ' :: ' : '') + (prob != null ? fmt_pct(prob) : '--'));
   } else {
