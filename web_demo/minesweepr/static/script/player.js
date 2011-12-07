@@ -247,7 +247,9 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.set_solution = function(solution) {
-    solution.process(this.board);
+    if (solution) {
+      solution.process(this.board);
+    }
     this.solution = solution;
     this.display_solution = solution;
   }
@@ -273,11 +275,12 @@ function GameSession(board, canvas, first_safe) {
     }
 
     var game = this;
-    this.action(function() {
+    this.action(function(uncovered) {
         if (type == 'sweep') {
+          uncovered.push(pos);
           return game.board.uncover(pos);
         } else if (type == 'sweep-all') {
-          return game.board.uncover_neighbors(pos);
+          return game.board.uncover_neighbors(pos, uncovered);
         } else if (type == 'mark-toggle') {
           game.board.flag(pos, 'toggle');
           return null;
@@ -292,9 +295,12 @@ function GameSession(board, canvas, first_safe) {
 
     var game = this;
     var solu = this.solution;
-    this.action(function() {
+    this.action(function(uncovered) {
         var action = false; 
         var survived = true;
+
+        // we don't add known safe cells to uncovered for efficiency,
+        // but update_risk could handle it if we did
 
         if (game.first_safety()) {
           game.board.uncover(game.board.safe_cell());
@@ -314,6 +320,7 @@ function GameSession(board, canvas, first_safe) {
                 board.flag(pos);
               } else if (cell.name == guess) {
                 survived = board.uncover(pos);
+                uncovered.push(pos);
                 action = true;
               }
             });
@@ -328,7 +335,8 @@ function GameSession(board, canvas, first_safe) {
       return;
     }
 
-    var result = move();
+    var uncovered_cells = [];
+    var result = move(uncovered_cells);
 
     var changed = (result != null);
     var survived = (result || !changed);
@@ -340,9 +348,9 @@ function GameSession(board, canvas, first_safe) {
       this.status = 'win';
     }
 
-    //TODO: self.total_risk = 1. - (1. - self.total_risk) * (1. - prob);
-
     if (changed) {
+      this.update_risk(uncovered_cells);
+
       this.seq = next_seq();
       this.solution = null;
       this.first_move = false;
@@ -354,6 +362,46 @@ function GameSession(board, canvas, first_safe) {
       this.solve();
     } else if (this.status != 'in_play') {
       set_spinner(null);
+    }
+  }
+
+  this.update_risk = function(cells_played) {
+    if (this.total_risk == null) {
+      // risk already unknown
+      return;
+    }
+
+    var prob = 0.;
+    var solu = this.solution;
+    var uncertain = [];
+    $.each(cells_played, function(i, pos) {
+        var p = (solu ? solu.get_prob(pos, true) : null); //!!
+        if (p == null) {
+          // moved on cell w/o solution; risk unknown
+          prob = null;
+          return false;
+        } else if (p > 1. - EPSILON) {
+          // moved on known mine; risk 100%
+          prob = 1.;
+          return false;
+        } else if (p > EPSILON) {
+          uncertain.push(p);
+        }
+      });
+      
+    if (prob != null && prob < 1.) {
+      if (uncertain.length > 1) {
+        // moved on multiple uncertain cells; risk now unknown
+        prob = null;
+      } else if (uncertain.length == 1) {
+        prob = uncertain[0];
+      }
+    }
+
+    if (prob == null) {
+      this.total_risk = null;
+    } else {
+      this.total_risk = 1. - (1. - this.total_risk) * (1. - prob);
     }
   }
 
@@ -374,7 +422,12 @@ function GameSession(board, canvas, first_safe) {
     }
     $('#num_mines').html($mines);
 
-    $('#risk').text(fmt_pct(this.total_risk));
+    if (this.total_risk == null) {
+      var $risk = $('<span title="You moved on a cell before a solution was ready. We don\'t know how risky this move was, therefore total risk is now unknown.">??</span>');
+    } else {
+      var $risk = fmt_pct(this.total_risk);
+    }
+    $('#risk').html($risk);
 
     $('#win')[this.status == 'win' ? 'show' : 'hide']();
     $('#fail')[this.status == 'fail' ? 'show' : 'hide']();
@@ -470,6 +523,16 @@ function Solution(probs) {
     }
   }
 
+  this.get_prob = function(pos, ignorevis) {
+    var prob = null;
+    var cell = this.board.get_cell(pos);
+    prob = this.cell_probs[cell.name];
+    if (prob == null && (ignorevis || !cell.visible)) { //ignorevis can go away when we cache 'other' cells
+      prob = this.cell_probs['_other'];
+    }
+    return prob;
+  }
+
   this.process = function(board) {
     this.board = board;
 
@@ -536,13 +599,7 @@ var cellname_in_tooltip = false;
 function prob_tooltip(pos, mousePos) {
   var show = false;
   if (pos && GAME.show_solution()) {
-    var prob = null;
-    var cell = GAME.board.get_cell(pos);
-    prob = GAME.display_solution.cell_probs[cell.name];
-    if (prob == null && !cell.visible) {
-      prob = GAME.display_solution.cell_probs['_other'];
-    }
-
+    var prob = GAME.display_solution.get_prob(pos);
     show = (prob > EPSILON && prob < 1. - EPSILON);
   }
 
@@ -648,4 +705,8 @@ function pop_state() {
     UNDO_STACK.pop();
     return UNDO_STACK[UNDO_STACK.length - 1];
   }
+}
+
+function extend(arr1, arr2) {
+  arr1.push.apply(arr1, arr2);
 }

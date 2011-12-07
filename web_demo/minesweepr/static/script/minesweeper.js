@@ -115,14 +115,16 @@ function Board (topology) {
   //have all been flagged (note that these flaggings may be incorrect)
   //return whether we survived (i.e., flagged mines were all correct), null if cell
   //did not meet criteria for 'uncover all'
-  this.uncover_neighbors = function(pos) {
+  //uncovered_neighbors is an array -- only a param so we can pass the info back to
+  //the parent; should be empty initially
+  this.uncover_neighbors = function(pos, uncovered_neighbors) {
+    uncovered_neighbors = uncovered_neighbors || [];
     var cell = this.get_cell(pos);
 
     if (!cell.visible) {
       return;
     }
 
-    var uncovered_neighbors = [];
     var num_flagged_neighbors = 0;
     this.for_each_neighbor(pos, function(pos, neighb, board) {
         if (neighb.flagged) {
