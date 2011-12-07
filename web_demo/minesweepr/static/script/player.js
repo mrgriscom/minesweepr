@@ -141,6 +141,8 @@ function new_game() {
   var board = new_board(topo, minespec);
   GAME = new GameSession(board, $('#game_canvas')[0], first_safe);
 
+  hover_overlays(null);
+
   GAME.start();
 }
 
@@ -203,10 +205,12 @@ function GameSession(board, canvas, first_safe) {
     //we won't check for this until the user takes some action, because the degenerate-case solution
     //is interesting to present
 
-    this.init_first_safe();
-
+    if (this.first_safety()) {
+      this.solve_first_safe();
+    } else {
+      this.solve();
+    }
     this.refresh();
-    this.solve();
   };
 
   this.refresh = function() {
@@ -222,22 +226,18 @@ function GameSession(board, canvas, first_safe) {
     set_spinner('solving');
 
     solve_query(this.board, SOLVER_URL, function (solution, proc_time) {
-        SOLUTIONS[seq] = solution;
         // make sure the game state this solution is for is still the current one
         if (GAME == game && seq == game.seq) {
           set_spinner(proc_time == null ? 'timeout' : proc_time);
 
           game.set_solution(solution);
-          game.refresh(true);
+          game.refresh();
         }
+        SOLUTIONS[seq] = solution;
       });
   }
 
   this.set_solution = function(solution) {
-    if (this.solution != null) {
-      return;
-    }
-
     this.solution = solution;
     this.display_solution = solution;
   }
@@ -389,12 +389,11 @@ function GameSession(board, canvas, first_safe) {
     return (this.first_safe && this.first_move && !board_full);
   }
 
-  this.init_first_safe = function() {
-    if (this.first_safety()) {
-      var sol = new Solution({_other: 0.}, this.board);
-      this.set_solution(sol);
-      SOLUTIONS[this.seq] = sol;
-    }
+  this.solve_first_safe = function() {
+    set_spinner(null);
+    var sol = new Solution({_other: 0.}, this.board);
+    this.set_solution(sol);
+    SOLUTIONS[this.seq] = sol;
   }
 
   this.mouse_cell = function(e) {

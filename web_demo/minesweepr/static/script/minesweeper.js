@@ -11,7 +11,7 @@ MINE_RADIUS = .5;
 FONT_SIZE = .5;
 FONT_OFFSET = ($.browser.mozilla ? .15 : .07);
 FONT_SCALE_LONG = .8;
-HIGHLIGHT_CUR_CELL = 'rgba(255, 180, 0, .2)';
+HIGHLIGHT_CUR_CELL = 'rgba(0, 0, 0, 0)'; //'rgba(255, 180, 0, .2)';
 HIGHLIGHT_NEIGHBOR = 'rgba(255, 220, 255, .2)';
 
 EPSILON = 1.0e-6;
@@ -66,12 +66,14 @@ function Board (topology) {
       cell.state = null;
 
       // re-init neighboring mine counts for relevant cells
-      this.init_cell_state(pos, cell);
+      var board = this;
       var recalc_neighbors = function(pos) {
-        this.for_each_neighbor(pos, function(pos, neighb, board) {
+        board.for_each_neighbor(pos, function(pos, neighb, board) {
             board.init_cell_state(pos, neighb);
           });
       };
+
+      this.init_cell_state(pos, cell);
       recalc_neighbors(pos);
       recalc_neighbors(swap_pos);
     }
