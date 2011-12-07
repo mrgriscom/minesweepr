@@ -189,7 +189,7 @@ function undo() {
 function GameSession(board, canvas, first_safe) {
   this.board = board;
   this.canvas = canvas;
-  this.first_safe = false; //first_safe;
+  this.first_safe = first_safe;
 
   this.start = function() {
     this.seq = next_seq();
@@ -239,21 +239,21 @@ function GameSession(board, canvas, first_safe) {
           game.set_solution(solution);
           game.refresh(true);
         }
-
-        //if (first) {
-        //  self.prepare_first_move();
-        //}
       });
   }
 
   this.set_solution = function(solution) {
+    if (this.first_safety()) {
+      solution.cell_probs['_other'] = 0.;
+    }
+
     this.solution = solution;
     this.display_solution = solution;
   }
 
   this.render = function() {
     var params = {
-      show_mines: this.show_mines(),
+      show_mines: this.show_mines() && !this.first_safety(),
     };
 
     this.board.render(this.canvas, params);
@@ -265,6 +265,10 @@ function GameSession(board, canvas, first_safe) {
   this.manual_move = function(pos, type) {
     if (!get_setting('play_manual')) {
       return;
+    }
+
+    if (this.first_safety() && type == 'sweep') {
+      this.board.ensure_safety(pos);
     }
 
     var game = this;
@@ -285,12 +289,16 @@ function GameSession(board, canvas, first_safe) {
       return;
     }
 
+    var game = this;
     var solu = this.solution;
     this.action(function() {
-        if (solu) {
-          var survived = true;
-          var action = false; 
+        var action = false; 
+        var survived = true;
 
+        if (game.first_safety()) {
+          game.board.uncover(game.board.safe_cell());
+          action = true;
+        } else if (solu) {
           var guess = null;
           if (solu.best_guesses.length) {
             var guess = choose_rand(solu.best_guesses);
@@ -308,10 +316,9 @@ function GameSession(board, canvas, first_safe) {
                 action = true;
               }
             });
-          return (action ? survived : null);
-        } else {
-          return null;
         }
+
+        return (action ? survived : null);
       });
   }
 
@@ -382,6 +389,14 @@ function GameSession(board, canvas, first_safe) {
 
   this.show_solution = function() {
     return get_setting('show_sol') && this.display_solution && this.status == 'in_play';
+  }
+
+  this.first_safety = function() {
+    if (this.board_full == null) {
+      var board_full = (this.board.mine_counts().total == this.board.num_cells());
+    }
+
+    return (this.first_safe && this.first_move && !board_full);
   }
 
   this.mouse_cell = function(e) {
@@ -466,42 +481,6 @@ function Solution(data, board) {
 
   this.process_probs(data);
 }
-
-
-  
-
-
-/*
-function GameSession (board, canvas, first_safe) {
-  this.start = function() {
-
-    this.solve(SOLVER_URL, true);
-  };
-
-  this.prepare_first_move = function() {
-    if (this.first_safe) {
-      var safe = this.board.safe_cell();
-      this.cell_probs[this.board.get_cell(safe).name] = 0.;
-      this.best_guesses = [];
-    }
-  }
-
-  this.solve = function(url, first) {
-    var self = this;
-    this.solve_query(url, function (data, board) {
-        self.process_probs(data);
-        if (first) {
-          self.prepare_first_move();
-        }
-        self.render();
-      });
-  }
-
-}
-*/
-
-
-
 
 function init_canvas() {
   UI_CANVAS = $('#canvas_stack canvas').filter(':last');

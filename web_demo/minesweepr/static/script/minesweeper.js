@@ -51,16 +51,42 @@ function Board (topology) {
     }
     this.for_each_cell(function (pos, cell, board) {
         cell.name = board.topology.cell_name(pos);
-        if (cell.state != 'mine') {
-          var count = 0;
-          board.for_each_neighbor(pos, function (pos, neighb, board) {
-              if (neighb.state == 'mine') {
-                count++;
-              }
-            });
-          cell.state = count;
-        }
+        board.init_cell_state(pos, cell);
       });
+  }
+
+  //reshuffle board so 'pos' will not be a mine
+  //only allowed to be called before any cells are uncovered
+  //assumes at least one cell on the board is safe
+  this.ensure_safety = function(pos) {
+    var cell = this.get_cell(pos);
+    if (cell.state == 'mine') {
+      var swap_pos = this.safe_cell();
+      this.get_cell(swap_pos).state = 'mine';
+      cell.state = null;
+
+      // re-init neighboring mine counts for relevant cells
+      this.init_cell_state(pos, cell);
+      var recalc_neighbors = function(pos) {
+        this.for_each_neighbor(pos, function(pos, neighb, board) {
+            board.init_cell_state(pos, neighb);
+          });
+      };
+      recalc_neighbors(pos);
+      recalc_neighbors(swap_pos);
+    }
+  }
+
+  this.init_cell_state = function(pos, cell) {
+    if (cell.state != 'mine') {
+      var count = 0;
+      this.for_each_neighbor(pos, function (pos, neighb, board) {
+          if (neighb.state == 'mine') {
+            count++;
+          }
+        });
+      cell.state = count;
+    }
   }
 
   //uncover a cell, triggering any cascades
