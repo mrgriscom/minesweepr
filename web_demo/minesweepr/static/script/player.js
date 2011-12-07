@@ -204,6 +204,8 @@ function GameSession(board, canvas, first_safe) {
     //we won't check for this until the user takes some action, because the degenerate-case solution
     //is interesting to present
 
+    this.init_first_safe();
+
     this.refresh();
     this.solve();
   };
@@ -243,8 +245,8 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.set_solution = function(solution) {
-    if (this.first_safety()) {
-      solution.cell_probs['_other'] = 0.;
+    if (this.solution != null) {
+      return;
     }
 
     this.solution = solution;
@@ -397,6 +399,14 @@ function GameSession(board, canvas, first_safe) {
     }
 
     return (this.first_safe && this.first_move && !board_full);
+  }
+
+  this.init_first_safe = function() {
+    if (this.first_safety()) {
+      var sol = new Solution({_other: 0.}, this.board);
+      this.set_solution(sol);
+      SOLUTIONS[this.seq] = sol;
+    }
   }
 
   this.mouse_cell = function(e) {
