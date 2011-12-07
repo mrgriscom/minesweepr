@@ -247,6 +247,7 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.set_solution = function(solution) {
+    solution.process(this.board);
     this.solution = solution;
     this.display_solution = solution;
   }
@@ -401,7 +402,7 @@ function GameSession(board, canvas, first_safe) {
 
   this.solve_first_safe = function() {
     set_spinner(null);
-    var sol = new Solution({_other: 0.}, this.board);
+    var sol = new Solution({_other: 0.});
     this.set_solution(sol);
     SOLUTIONS[this.seq] = sol;
   }
@@ -425,8 +426,8 @@ function GameSession(board, canvas, first_safe) {
     this.status = 'in_play';
     this.total_risk = snapshot.risk;
     this.first_move = snapshot.first;
-    this.set_solution(SOLUTIONS[this.seq]);
     this.board.restore(snapshot.board_state);
+    this.set_solution(SOLUTIONS[this.seq]);
 
     this.refresh();
   }
@@ -437,17 +438,17 @@ function solve_query(board, url, callback) {
       if (data.error) {
         callback(null, null);
       } else {
-        callback(new Solution(data.solution, board), data.processing_time);
+        callback(new Solution(data.solution), data.processing_time);
       }
     }, "json");
 }
 
 var SOLUTIONS = {};
 
-function Solution(data, board) {
-  this.board = board;
-  this.cell_probs = null;
+function Solution(probs) {
+  this.cell_probs = probs;
   this.best_guesses = null;
+  this.board = null;
 
   this.apply = function(func) {
     var names = [];
@@ -469,8 +470,8 @@ function Solution(data, board) {
     }
   }
 
-  this.process_probs = function(probs) {
-    this.cell_probs = probs;
+  this.process = function(board) {
+    this.board = board;
 
     var must_guess = true;
     var guesses = [];
@@ -505,8 +506,6 @@ function Solution(data, board) {
         }
       });
   }
-
-  this.process_probs(data);
 }
 
 function init_canvas() {
