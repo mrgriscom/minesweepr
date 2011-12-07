@@ -141,9 +141,13 @@ function new_game() {
   var board = new_board(topo, minespec);
   GAME = new GameSession(board, $('#game_canvas')[0], first_safe);
 
-  hover_overlays(null);
-
+  game_reset();
   GAME.start();
+}
+
+function game_reset() {
+  hover_overlays(null);
+  UNDO_STACK = [];
 }
 
 function new_topo(type, w, h, d) {
@@ -184,7 +188,10 @@ function manual_move(e) {
 }
 
 function undo() {
-  console.log('not yet');
+  var snapshot = pop_state();
+  if (window.GAME && snapshot) {
+    GAME.restore(snapshot);
+  }
 }
 
 function GameSession(board, canvas, first_safe) {
@@ -211,6 +218,8 @@ function GameSession(board, canvas, first_safe) {
       this.solve();
     }
     this.refresh();
+
+    push_state();
   };
 
   this.refresh = function() {
@@ -336,6 +345,7 @@ function GameSession(board, canvas, first_safe) {
       this.seq = next_seq();
       this.solution = null;
       this.first_move = false;
+      push_state();
     }
 
     this.refresh();
@@ -399,6 +409,26 @@ function GameSession(board, canvas, first_safe) {
   this.mouse_cell = function(e) {
     var coord = mousePos(e, this.canvas);
     return this.board.cell_from_xy(coord, this.canvas);
+  }
+
+  this.snapshot = function() {
+    return {
+      seq: this.seq,
+      risk: this.total_risk,
+      first: this.first_move,
+      board_state: this.board.snapshot(),
+    };
+  }
+
+  this.restore = function(snapshot) {
+    this.seq = snapshot.seq;
+    this.status = 'in_play';
+    this.total_risk = snapshot.risk;
+    this.first_move = snapshot.first;
+    this.set_solution(SOLUTIONS[this.seq]);
+    this.board.restore(snapshot.board_state);
+
+    this.refresh();
   }
 }
 
@@ -606,4 +636,17 @@ function set_spinner(state) {
   }
 }
 
+function push_state() {
+  UNDO_STACK.push(GAME.snapshot());
+}
 
+function pop_state() {
+  // it's easier if the current state is always on the stack, hence these shenanigans
+  // pretend the last item on the stack doesn't exist
+  if (UNDO_STACK.length == 1) {
+    return null;
+  } else {
+    UNDO_STACK.pop();
+    return UNDO_STACK[UNDO_STACK.length - 1];
+  }
+}

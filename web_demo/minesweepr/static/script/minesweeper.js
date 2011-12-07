@@ -336,6 +336,34 @@ function Board (topology) {
   this.cell_from_xy = function(p, canvas) {
     return this.topology.cell_from_xy(p, canvas);
   }
+
+  this.snapshot = function() {
+    var visible = [];
+    var flagged = [];
+    this.for_each_cell(function(pos, cell, board) {
+        if (cell.visible) {
+          visible.push(cell);
+        }
+        if (cell.flagged) {
+          flagged.push(cell);
+        }
+      });
+    return {visible: visible, flagged: flagged};
+  }
+
+  this.restore = function(snapshot) {
+    this.for_each_cell(function(pos, cell, board) {
+        cell.visible = false;
+        cell.flagged = false;
+      });
+    var board = this;
+    $.each(snapshot.visible, function(i, cell) {
+        cell.visible = true;
+      });
+    $.each(snapshot.flagged, function(i, cell) {
+        cell.flagged = true;
+      });
+  }
 }
 
 function Cell (name, state, visible, flagged) {
