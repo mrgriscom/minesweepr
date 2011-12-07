@@ -200,6 +200,10 @@ function GameSession(board, canvas, first_safe) {
     // used for display purposes but not for logic, for when real solution is being recomputed
     this.display_solution = null;
 
+    //note: a board that is all mines is 'solved' from the very start (in non-strict mode), however,
+    //we won't check for this until the user takes some action, because the degenerate-case solution
+    //is interesting to present
+
     this.refresh();
     this.solve();
   };
@@ -285,7 +289,6 @@ function GameSession(board, canvas, first_safe) {
     this.action(function() {
         if (solu) {
           var survived = true;
-          //necessary to keep track of this? is every auto-move inherently actionable?
           var action = false; 
 
           var guess = null;
@@ -322,20 +325,21 @@ function GameSession(board, canvas, first_safe) {
     var changed = (result != null);
     var survived = (result || !changed);
 
-    if (changed) {
-      this.seq = next_seq();
-      this.solution = null;
-    }
-
     if (!survived) {
       this.status = 'fail';
-    } else if (changed && this.board.is_complete()) {
+    } else if ((changed || this.first_move) && this.board.is_complete()) {
+      // must check when 'first move' because we don't check for all-mine boards on session init
       this.status = 'win';
     }
 
     //TODO: self.total_risk = 1. - (1. - self.total_risk) * (1. - prob);
 
-    //this.first_move = false;
+    if (changed) {
+      this.seq = next_seq();
+      this.solution = null;
+      this.first_move = false;
+    }
+
     this.refresh();
     if (this.status == 'in_play' && changed) {
       this.solve();
