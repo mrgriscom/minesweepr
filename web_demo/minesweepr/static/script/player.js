@@ -192,32 +192,59 @@ function GameSession(board, canvas, first_safe) {
   this.first_safe = false; //first_safe;
 
   this.start = function() {
+    this.seq = next_seq();
+    this.status = 'in_play';
     this.total_risk = 0.;
     this.first_move = true;
-    this.status = 'in_play';
     this.solution = null;
+    // used for display purposes but not for logic, for when real solution is being recomputed
+    this.display_solution = null;
 
     this.refresh();
     this.solve();
   };
 
-  this.refresh = function(redraw_only) {
-    if (!redraw_only) {
-      this.update_info();
-    }
+  this.refresh = function() {
+    this.update_info();
     this.render();
     TOOLTIP_UPDATE();
   }
 
   this.solve = function() {
     var game = this;
-    solve_query(this.board, SOLVER_URL, function (solution) {
+    var seq = this.seq;
+
+    $('#solving').show();
+    $('#solved').hide();
+
+    solve_query(this.board, SOLVER_URL, function (solution, proc_time) {
+        SOLUTIONS[seq] = solution;
+        // make sure the game state this solution is for is still the current one
+        if (GAME == game && seq == game.seq) {
+          $('#solving').hide();
+          $('#solved').show();
+
+          if (proc_time != null) {
+            var s_time = proc_time.toFixed(3) + 's';
+          } else {
+            var s_time = '<span style="font-size: 32px; line-height: 32px;">\u2620</span>';
+            alert('sorry, an error occurred [' + data.error + ']; please start a new game');
+          }
+          $('#solve_time').html(s_time);
+
+          game.set_solution(solution);
+          game.refresh(true);
+        }
+
         //if (first) {
         //  self.prepare_first_move();
         //}
-        game.solution = solution;
-        game.refresh(true);
       });
+  }
+
+  this.set_solution = function(solution) {
+    this.solution = solution;
+    this.display_solution = solution;
   }
 
   this.render = function() {
@@ -227,7 +254,7 @@ function GameSession(board, canvas, first_safe) {
 
     this.board.render(this.canvas, params);
     if (this.show_solution()) {
-      this.solution.render(this.canvas);
+      this.display_solution.render(this.canvas);
     }
   }
 
@@ -258,7 +285,8 @@ function GameSession(board, canvas, first_safe) {
     this.action(function() {
         if (solu) {
           var survived = true;
-          var action = false; //necessary to keep track of this?
+          //necessary to keep track of this? is every auto-move inherently actionable?
+          var action = false; 
 
           var guess = null;
           if (solu.best_guesses.length) {
@@ -294,9 +322,14 @@ function GameSession(board, canvas, first_safe) {
     var changed = (result != null);
     var survived = (result || !changed);
 
+    if (changed) {
+      this.seq = next_seq();
+      this.solution = null;
+    }
+
     if (!survived) {
       this.status = 'fail';
-    } else if (this.board.is_complete()) {
+    } else if (changed && this.board.is_complete()) {
       this.status = 'win';
     }
 
@@ -306,7 +339,10 @@ function GameSession(board, canvas, first_safe) {
     this.refresh();
     if (this.status == 'in_play' && changed) {
       this.solve();
-    }    
+    } else if (this.status != 'in_play') {
+      $('#solving').hide();
+      $('#solved').hide();
+    }
   }
 
   this.update_info = function() {
@@ -341,7 +377,7 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.show_solution = function() {
-    return get_setting('show_sol') && this.solution && this.status == 'in_play';
+    return get_setting('show_sol') && this.display_solution && this.status == 'in_play';
   }
 
   this.mouse_cell = function(e) {
@@ -351,26 +387,16 @@ function GameSession(board, canvas, first_safe) {
 }
 
 function solve_query(board, url, callback) {
-  $('#solving').show();
-  $('#solved').hide();
-  
   $.post(url, JSON.stringify(board.game_state()), function (data) {
-      $('#solving').hide();
-      $('#solved').show();
-
       if (data.error) {
-        var sol = null;
-        var s_time = '<span style="font-size: 32px; line-height: 32px;">\u2620</span>';
-        alert('sorry, an error occurred [' + data.error + ']; please start a new game');
+        callback(null, null);
       } else {
-        var sol = new Solution(data.solution, board);
-        var s_time = data.processing_time.toFixed(3) + 's';
+        callback(new Solution(data.solution, board), data.processing_time);
       }
-      
-      $('#solve_time').html(s_time);
-      callback(sol);
     }, "json");
 }
+
+var SOLUTIONS = {};
 
 function Solution(data, board) {
   this.board = board;
@@ -503,9 +529,9 @@ function prob_tooltip(pos, mousePos) {
   if (pos && GAME.show_solution()) {
     var prob = null;
     var cell = GAME.board.get_cell(pos);
-    prob = GAME.solution.cell_probs[cell.name];
+    prob = GAME.display_solution.cell_probs[cell.name];
     if (prob == null && !cell.visible) {
-      prob = GAME.solution.cell_probs['_other'];
+      prob = GAME.display_solution.cell_probs['_other'];
     }
 
     show = (prob > EPSILON && prob < 1. - EPSILON);
@@ -568,4 +594,10 @@ function resize_canvas() {
 
 function fmt_pct(x) {
   return (100. * x).toFixed(2) + '%'
+}
+
+SEQ = 0;
+function next_seq() {
+  SEQ++;
+  return SEQ;
 }
