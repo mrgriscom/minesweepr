@@ -48,8 +48,7 @@ $(document).ready(function() {
     hover_overlays(null);
     $('#win').hide();
     $('#fail').hide();
-    $('#solving').hide();
-    $('#solved').hide();
+    set_spinner(null);
 
     shortcut.add('enter', function() { GAME.best_move(); });
     shortcut.add('ctrl+enter', new_game);
@@ -220,23 +219,13 @@ function GameSession(board, canvas, first_safe) {
     var game = this;
     var seq = this.seq;
 
-    $('#solving').show();
-    $('#solved').hide();
+    set_spinner('solving');
 
     solve_query(this.board, SOLVER_URL, function (solution, proc_time) {
         SOLUTIONS[seq] = solution;
         // make sure the game state this solution is for is still the current one
         if (GAME == game && seq == game.seq) {
-          $('#solving').hide();
-          $('#solved').show();
-
-          if (proc_time != null) {
-            var s_time = proc_time.toFixed(3) + 's';
-          } else {
-            var s_time = '<span style="font-size: 32px; line-height: 32px;">\u2620</span>';
-            alert('sorry, an error occurred [' + data.error + ']; please start a new game');
-          }
-          $('#solve_time').html(s_time);
+          set_spinner(proc_time == null ? 'timeout' : proc_time);
 
           game.set_solution(solution);
           game.refresh(true);
@@ -353,8 +342,7 @@ function GameSession(board, canvas, first_safe) {
     if (this.status == 'in_play' && changed) {
       this.solve();
     } else if (this.status != 'in_play') {
-      $('#solving').hide();
-      $('#solved').hide();
+      set_spinner(null);
     }
   }
 
@@ -594,3 +582,29 @@ function next_seq() {
   SEQ++;
   return SEQ;
 }
+
+function set_spinner(state) {
+  if (state == null) {
+    $('#solving').hide();
+    $('#solved').hide();
+    $('#timeout').hide();
+  } else if (state == 'solving') {
+    $('#solving').show();
+    $('#solved').hide();
+    $('#timeout').hide();
+  } else {
+    $('#solving').hide();
+    $('#solved').show();
+
+    if (state == 'timeout') {
+      var s_time = $('<span style="font-size: 32px; line-height: 32px;">\u2620</span>');
+      s_time.mousemove(function(e) { $('#timeout').show(); });
+      s_time.mouseout(function(e) { $('#timeout').hide(); });
+    } else {
+      var s_time = (+state).toFixed(3) + 's';
+    }
+    $('#solve_time').html(s_time);
+  }
+}
+
+
