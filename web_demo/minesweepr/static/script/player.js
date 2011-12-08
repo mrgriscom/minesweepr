@@ -330,6 +330,7 @@ function GameSession(board, canvas, first_safe) {
       });
   }
 
+  var strict_completeness = false;
   this.action = function(move) {
     if (this.status != 'in_play') {
       return;
@@ -343,8 +344,8 @@ function GameSession(board, canvas, first_safe) {
 
     if (!survived) {
       this.status = 'fail';
-    } else if ((changed || this.first_move) && this.board.is_complete()) {
-      // must check when 'first move' because we don't check for all-mine boards on session init
+    } else if (this.board.is_complete(strict_completeness)) {
+      // must check even on not 'changed', as flagging alone can trigger completeness in certain situations
       this.status = 'win';
     }
 

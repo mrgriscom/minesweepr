@@ -192,7 +192,12 @@ function Board (topology) {
   this.is_complete = function (strict) {
     var complete = true;
     this.for_each_cell(function (pos, cell, board) {
-        if (!cell.visible && ((cell.state == 'mine') != (strict ? cell.flagged : true))) {
+        if (cell.state == 'mine') {
+          var _compl = (strict ? cell.flagged : true);
+        } else {
+          var _compl = cell.visible;
+        }
+        if (!_compl) {
           complete = false;
         }
       });
