@@ -91,19 +91,21 @@ function Board (topology) {
     }
   }
 
+  var cascade_overrides_flag = false;
   //uncover a cell, triggering any cascades
   //return whether we survived, null if operation not applicable
-  this.uncover = function (pos) {
+  this.uncover = function (pos, cascade_override) {
     var cell = this.get_cell(pos);
-    if (!cell.visible && !cell.flagged) {
+    if (!cell.visible && (!cell.flagged || cascade_override)) {
       cell.visible = true;
+      cell.flagged = false;
 
       if (cell.state == 'mine') {
         return false;
       } else {
         if (cell.state == 0) {
           this.for_each_neighbor(pos, function (pos, neighb, board) {
-              board.uncover(pos);
+              board.uncover(pos, cascade_overrides_flag);
             });
         }
         return true;
@@ -302,28 +304,28 @@ function Board (topology) {
           }
         } else if (cell.visible) {
           add(clear_cells, cell);
-          if (cell.state > 0) {
-            var cells_of_interest = [];
-            var mines_of_interest = [];
-            var on_frontier = false;
-            board.for_each_neighbor(pos, function (pos, neighbor, board) {
-                if (!neighbor.visible) { //includes flagged mines
-                  cells_of_interest.push(neighbor);
-                  if (is_mine(neighbor)) {
-                    mines_of_interest.push(neighbor);
-                  } else {
-                    on_frontier = true;
-                  }
-                }
-              });
 
-            if (everything_mode || on_frontier) {
-              rules.push(mk_rule(cell.state, cells_of_interest));
-              $.each(mines_of_interest, function(i, mine) {
-                  add(relevant_mines, mine);
-                });
-            }
-          } else {
+          var cells_of_interest = [];
+          var mines_of_interest = [];
+          var on_frontier = false;
+          board.for_each_neighbor(pos, function (pos, neighbor, board) {
+              if (!neighbor.visible) { //includes flagged mines
+                cells_of_interest.push(neighbor);
+                if (is_mine(neighbor)) {
+                  mines_of_interest.push(neighbor);
+                } else {
+                  on_frontier = true;
+                }
+              }
+            });
+
+          if (on_frontier || (everything_mode && cell.state > 0)) {
+            rules.push(mk_rule(cell.state, cells_of_interest));
+            $.each(mines_of_interest, function(i, mine) {
+                add(relevant_mines, mine);
+              });
+          }
+          if (cell.state == 0) {
             board.for_each_neighbor(pos, function (pos, neighbor, board) {
                 add(zero_cells, neighbor);
               });
