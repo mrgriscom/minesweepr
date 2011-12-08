@@ -207,6 +207,9 @@ function GameSession(board, canvas, first_safe) {
     this.solution = null;
     // used for display purposes but not for logic, for when real solution is being recomputed
     this.display_solution = null;
+    // a list of solved mines (as opposed to user-flagged mines), to make subsequent solving
+    // more efficient
+    this.known_mines = [];
 
     //note: a board that is all mines is 'solved' from the very start (in non-strict mode), however,
     //we won't check for this until the user takes some action, because the degenerate-case solution
@@ -243,12 +246,22 @@ function GameSession(board, canvas, first_safe) {
           game.refresh();
         }
         SOLUTIONS[seq] = solution;
+      }, function(board) {
+        return board.game_state(game.known_mines);
       });
   }
 
   this.set_solution = function(solution) {
     if (solution) {
       solution.process(this.board);
+
+      var game = this;
+      var is_known = in_set(this.known_mines);
+      solution.each(this.board, function (pos, cell, prob, board) {
+          if (prob > 1. - EPSILON && !is_known(cell.name)) {
+            game.known_mines.push(cell.name);
+          }
+        });
     }
     this.solution = solution;
     this.display_solution = solution;
@@ -473,6 +486,7 @@ function GameSession(board, canvas, first_safe) {
       risk: this.total_risk,
       first: this.first_move,
       board_state: this.board.snapshot(),
+      known_mines: this.known_mines.slice(0),
     };
   }
 
@@ -482,14 +496,16 @@ function GameSession(board, canvas, first_safe) {
     this.total_risk = snapshot.risk;
     this.first_move = snapshot.first;
     this.board.restore(snapshot.board_state);
+    this.known_mines = snapshot.known_mines;
     this.set_solution(SOLUTIONS[this.seq]);
 
     this.refresh();
   }
 }
 
-function solve_query(board, url, callback) {
-  $.post(url, JSON.stringify(board.game_state()), function (data) {
+function solve_query(board, url, callback, get_state) {
+  get_state = get_state || function(board) { return board.game_state(); };
+  $.post(url, JSON.stringify(get_state(board)), function (data) {
       if (data.error) {
         callback(null, null);
       } else {
@@ -720,5 +736,16 @@ function pop_state() {
   } else {
     UNDO_STACK.pop();
     return UNDO_STACK[UNDO_STACK.length - 1];
+  }
+}
+
+function in_set(list) {
+  var ix = {};
+  $.each(list, function(i, e) {
+      ix[e] = true;
+    });
+      
+  return function(e) {
+    return ix[e];
   }
 }

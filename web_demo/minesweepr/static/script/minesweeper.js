@@ -258,7 +258,14 @@ function Board (topology) {
       });
   }
 
-  this.game_state = function (everything_mode) {
+  this.game_state = function (known_mines, everything_mode) {
+    // known_mines is a list of cell (names) actually known to be mines. if null, flagged cells
+    // will be considered mines. this is 'trust flags' mode
+
+    // note: this app is not equipped to render solutions from 'everything' or 'trust flags' mode
+    // 'trust flags' mode will also cause the solver to report inconsistent game states if cells
+    // are flagged incorrectly
+
     var rules = [];
     var clear_cells = [];
     var zero_cells = [];
@@ -279,23 +286,32 @@ function Board (topology) {
       }
     }
 
+    var is_mine = (function() {
+        var is_known = in_set(known_mines || []);
+        return function(cell) {
+          var trust_flags = (known_mines == null);
+          return (trust_flags ? cell.flagged : is_known(cell.name));
+        };
+      })();
+
     this.for_each_cell(function (pos, cell, board) {
-        if (cell.state == 'mine' && cell.flagged) {
+        if (is_mine(cell)) {
           num_known_mines += 1;
-          if (everything_mode) {
+          if (everything_mode || known_mines) {
             add(relevant_mines, cell);
           }
         } else if (cell.visible) {
           add(clear_cells, cell);
           if (cell.state > 0) {
             var cells_of_interest = [];
+            var mines_of_interest = [];
             var on_frontier = false;
             board.for_each_neighbor(pos, function (pos, neighbor, board) {
-                if (!neighbor.visible || neighbor.state == 'mine') {
+                if (!neighbor.visible) { //includes flagged mines
                   cells_of_interest.push(neighbor);
-                  if (neighbor.state == 'mine' && neighbor.flagged) {
-                    add(relevant_mines, neighbor);
-                  } else if (!neighbor.visible) {
+                  if (is_mine(neighbor)) {
+                    mines_of_interest.push(neighbor);
+                  } else {
                     on_frontier = true;
                   }
                 }
@@ -303,6 +319,9 @@ function Board (topology) {
 
             if (everything_mode || on_frontier) {
               rules.push(mk_rule(cell.state, cells_of_interest));
+              $.each(mines_of_interest, function(i, mine) {
+                  add(relevant_mines, mine);
+                });
             }
           } else {
             board.for_each_neighbor(pos, function (pos, neighbor, board) {
