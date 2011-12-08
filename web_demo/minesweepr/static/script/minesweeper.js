@@ -142,7 +142,9 @@ function Board (topology) {
     var board = this;
     $.each(uncovered_neighbors, function(i, pos) {
         var result = board.uncover(pos);
-        if (!result) {
+        if (result == false) {
+          // need to ignore result == null: (cell was already uncovered due to
+          // cascade from previous neighbor)
           survived = false;
         }
       });

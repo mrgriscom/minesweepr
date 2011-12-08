@@ -220,7 +220,7 @@ function GameSession(board, canvas, first_safe) {
     this.refresh();
 
     push_state();
-  };
+  }
 
   this.refresh = function() {
     this.update_info();
@@ -705,8 +705,4 @@ function pop_state() {
     UNDO_STACK.pop();
     return UNDO_STACK[UNDO_STACK.length - 1];
   }
-}
-
-function extend(arr1, arr2) {
-  arr1.push.apply(arr1, arr2);
 }
