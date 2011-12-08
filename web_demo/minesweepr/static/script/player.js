@@ -496,7 +496,7 @@ function GameSession(board, canvas, first_safe) {
     this.total_risk = snapshot.risk;
     this.first_move = snapshot.first;
     this.board.restore(snapshot.board_state);
-    this.known_mines = snapshot.known_mines;
+    this.known_mines = snapshot.known_mines.slice(0);
     this.set_solution(SOLUTIONS[this.seq]);
 
     this.refresh();
