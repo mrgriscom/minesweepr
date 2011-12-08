@@ -509,6 +509,10 @@ function solve_query(board, url, callback, get_state) {
       if (data.error) {
         callback(null, null);
       } else {
+        if (data.solution == null) {
+          alert('game state detected as inconsistent!');
+        }
+
         callback(new Solution(data.solution), data.processing_time);
       }
     }, "json");
