@@ -146,8 +146,9 @@ function new_game() {
 }
 
 function game_reset() {
-  hover_overlays(null);
   UNDO_STACK = [];
+  SOLUTIONS = {};
+  hover_overlays(null);
 }
 
 function new_topo(type, w, h, d) {
@@ -519,8 +520,6 @@ function solve_query(board, url, callback, get_state) {
       }
     }, "json");
 }
-
-var SOLUTIONS = {};
 
 function Solution(probs) {
   this.cell_probs = probs;
