@@ -232,26 +232,25 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.solve = function() {
+    var sol_context = new_solution_context(this);
+    sol_context.refresh();
+
     var game = this;
     var seq = this.seq;
-
-    set_spinner('solving');
-
     solve_query(this.board, SOLVER_URL, function (solution, proc_time) {
+        sol_context.update(solution, proc_time);
         // make sure the game state this solution is for is still the current one
         if (GAME == game && seq == game.seq) {
-          set_spinner(proc_time == null ? 'timeout' : proc_time);
-
-          game.set_solution(solution);
+          game.set_solution(sol_context);
           game.refresh();
         }
-        SOLUTIONS[seq] = solution;
       }, function(board) {
         return board.game_state(game.known_mines);
       });
   }
 
-  this.set_solution = function(solution) {
+  this.set_solution = function(sc) {
+    var solution = sc.solution;
     if (solution) {
       solution.process(this.board);
 
@@ -265,6 +264,8 @@ function GameSession(board, canvas, first_safe) {
     }
     this.solution = solution;
     this.display_solution = solution;
+
+    sc.refresh();
   }
 
   this.render = function() {
@@ -469,10 +470,9 @@ function GameSession(board, canvas, first_safe) {
   }
 
   this.solve_first_safe = function() {
-    set_spinner(null);
-    var sol = new Solution({_other: 0.});
-    this.set_solution(sol);
-    SOLUTIONS[this.seq] = sol;
+    var sol_context = new_solution_context(this);
+    sol_context.update(new Solution({_other: 0.}), 0.);
+    this.set_solution(sol_context);
   }
 
   this.mouse_cell = function(e) {
@@ -495,8 +495,10 @@ function GameSession(board, canvas, first_safe) {
     this.status = 'in_play';
     this.total_risk = snapshot.risk;
     this.first_move = snapshot.first;
-    this.board.restore(snapshot.board_state);
     this.known_mines = snapshot.known_mines.slice(0);
+
+    // these must happen in this order
+    this.board.restore(snapshot.board_state);
     this.set_solution(SOLUTIONS[this.seq]);
 
     this.refresh();
@@ -605,6 +607,36 @@ function Solution(probs) {
         });
     }
   }
+}
+
+function SolutionContext() {
+  this.solution = null;
+  this.proc_time = null;
+
+  this.update = function(solution, proc_time) {
+    this.solution = solution;
+    this.proc_time = (proc_time == null ? -1. : proc_time);
+  }
+
+  this.refresh = function() {
+    set_spinner(this.state());
+  }
+
+  this.state = function() {
+    if (this.proc_time == null) {
+      return 'solving';
+    } else if (this.proc_time < 0.) {
+      return 'timeout';
+    } else {
+      return this.proc_time;
+    }
+  }
+}
+
+function new_solution_context(game) {
+  var sol_context = new SolutionContext();
+  SOLUTIONS[game.seq] = sol_context;
+  return sol_context;
 }
 
 function init_canvas() {
