@@ -246,8 +246,13 @@ function Board (topology) {
   }
 
   this.for_each_name = function (names, func) {
+    var nameIx = {};
+    $.each(names, function(i, name) {
+        nameIx[name] = true;
+      });
+
     this.for_each_cell(function (pos, cell, board) {
-        if (names.indexOf(cell.name) != -1) {
+        if (nameIx[cell.name]) {
           func(pos, cell, board);
         }
       });

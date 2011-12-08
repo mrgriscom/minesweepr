@@ -261,7 +261,7 @@ function GameSession(board, canvas, first_safe) {
 
     this.board.render(this.canvas, params);
     if (this.show_solution()) {
-      this.display_solution.render(this.canvas);
+      this.display_solution.render(this.canvas, this.board);
     }
   }
 
@@ -311,7 +311,7 @@ function GameSession(board, canvas, first_safe) {
             var guess = choose_rand(solu.best_guesses);
           }
 
-          solu.apply(function (pos, cell, prob, board) {
+          solu.each(game.board, function (pos, cell, prob, board) {
               if (prob < EPSILON) {
                 board.flag(pos, false);
                 board.uncover(pos);
@@ -373,10 +373,11 @@ function GameSession(board, canvas, first_safe) {
     }
 
     var prob = 0.;
+    var game = this;
     var solu = this.solution;
     var uncertain = [];
     $.each(cells_played, function(i, pos) {
-        var p = (solu ? solu.get_prob(pos, true) : null); //!!
+        var p = (solu ? solu.get_prob(pos, game.board) : null);
         if (p == null) {
           // moved on cell w/o solution; risk unknown
           prob = null;
@@ -502,45 +503,15 @@ var SOLUTIONS = {};
 function Solution(probs) {
   this.cell_probs = probs;
   this.best_guesses = null;
-  this.board = null;
-
-  this.apply = function(func) {
-    var names = [];
-    for (var name in this.cell_probs) {
-      names.push(name);
-    }
-    var solu = this;
-    this.board.for_each_name(names, function (pos, cell, board) {
-        func(pos, cell, solu.cell_probs[cell.name], board);
-      });
-    
-    var other_prob = this.cell_probs['_other'];
-    if (other_prob != null) {
-      this.board.for_each_cell(function (pos, cell, board) {
-          if (!cell.visible && names.indexOf(cell.name) == -1) {
-            func(pos, cell, other_prob, board);
-          }
-        });
-    }
-  }
-
-  this.get_prob = function(pos, ignorevis) {
-    var prob = null;
-    var cell = this.board.get_cell(pos);
-    prob = this.cell_probs[cell.name];
-    if (prob == null && (ignorevis || !cell.visible)) { //ignorevis can go away when we cache 'other' cells
-      prob = this.cell_probs['_other'];
-    }
-    return prob;
-  }
+  this.other_cells = null;
 
   this.process = function(board) {
-    this.board = board;
+    this.enumerate_other(board);
 
     var must_guess = true;
     var guesses = [];
     var min_prob = 1.;
-    this.apply(function (pos, cell, prob, board) {
+    this.each(board, function (pos, cell, prob, board) {
         if (prob < EPSILON) {
           must_guess = false;
         } else if (prob < 1. - EPSILON) {
@@ -560,15 +531,59 @@ function Solution(probs) {
     }
   }
 
-  this.render = function(canvas) {
+  this.each = function(board, func) {
+    var _apply = function(cell_names, get_prob) {
+      board.for_each_name(cell_names, function (pos, cell, board) {
+          func(pos, cell, get_prob(cell.name, board), board);
+        });
+    }
+    
+    var names = [];
+    for (var name in this.cell_probs) {
+      names.push(name);
+    }
     var solu = this;
-    this.apply(function (pos, cell, prob, board) {
+    _apply(names, function(name) { return solu.cell_probs[name]; });
+    _apply(this.other_cells, function(name) { return solu.other_prob(); });
+  }
+
+  this.render = function(canvas, board) {
+    var solu = this;
+    this.each(board, function (pos, cell, prob, board) {
         // still render overlay for cells erroneously flagged, or cells correctly flagged
         // but we shouldn't know that yet (p != 1.)
         if (!(cell.flagged && cell.state == 'mine') || prob < 1.) {
-          solu.board.render_overlay(pos, canvas, prob_shade(prob, solu.best_guesses.indexOf(cell.name) != -1), cell.flagged && prob < 1.);
+          board.render_overlay(pos, canvas, prob_shade(prob, solu.best_guesses.indexOf(cell.name) != -1), cell.flagged && prob < 1.);
         }
       });
+  }
+
+  this.get_prob = function(pos, board) {
+    var prob = null;
+    var cell = board.get_cell(pos);
+    prob = this.cell_probs[cell.name];
+    if (prob == null && this.other_cells.indexOf(cell.name) != -1) {
+      prob = this.other_prob();
+    }
+    return prob;
+  }
+
+  this.other_prob = function() {
+    return this.cell_probs['_other'];
+  }
+
+  this.enumerate_other = function(board) {
+    this.other_cells = [];
+
+    var other_prob = this.other_prob();
+    if (other_prob != null) {
+      var solu = this;
+      board.for_each_cell(function (pos, cell, board) {
+          if (!cell.visible && solu.cell_probs[cell.name] == null) {
+            solu.other_cells.push(cell.name);
+          }
+        });
+    }
   }
 }
 
@@ -600,7 +615,7 @@ var cellname_in_tooltip = false;
 function prob_tooltip(pos, mousePos) {
   var show = false;
   if (pos && GAME.show_solution()) {
-    var prob = GAME.display_solution.get_prob(pos);
+    var prob = GAME.display_solution.get_prob(pos, GAME.board);
     show = (prob > EPSILON && prob < 1. - EPSILON);
   }
 
