@@ -1,34 +1,32 @@
+<html>
+<head>
+<title>{% block title %}{% endblock %}</title>
+
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
-<script src="{{ STATIC_URL }}script/minesweeper.js" type="text/javascript"></script>
+<script type="text/javascript">
+
+SOLVER_URL = '{% url minesweepr.views.api_solve %}';
+
+</script>
+
+</head>
+<body>
 
 <style>
 
-  body {
-    font-family: sans-serif;
-  }
+body {
+  font-family: sans-serif;
+}
 
-  .help {
-    font-size: small;
-    color: grey;
-    font-style: italic;
-  }
+{% block content_style %}
+{% endblock %}
 
 </style>
 
-  <table>
-    <tr>
-      <td>Dimensions:&nbsp;&nbsp;</td>
-      <td><input id="mines" type="text"></td>
-      <td class="help">(30x16, 10 10, etc.)</td>
-    </tr>
-    <tr>
-      <td>Mines:&nbsp;&nbsp;</td>
-      <td><input id="dim" type="text"></td>
-      <td class="help">(total # of mines OR probability that unknown cell is a mine [0., 1.])</td>
-    </tr>
-  </table>
-  <br>
+{% block main %}
+{% endblock %}
 
-  Rulespec:<br>
-  <textarea id="rules" style="width: 40em; height: 25em;"></textarea>
+<i>this feature is not yet written&hellip;</i>
 
+</body>
+</html>
