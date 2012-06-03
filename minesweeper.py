@@ -575,21 +575,23 @@ class PermutedRuleset(object):
         into account the constraints of all overlapping rules. eliminate
         impossible permutations"""
 
-        interferences = self.cell_rules_map.interference_edges()
+        interferences = set(itertools.chain(*(((r, p, r_ov) for p in self.permu_map[r]) for r, r_ov in self.cell_rules_map.interference_edges())))
 
         # we can't simply iterate through 'interferences', as eliminating a
         # permutation in a rule may in turn invalidate permutations in other
         # overlapping rules that have already been processed, thus causing a
         # cascade effect
         while interferences:
-            r, r_ov = interferences.pop()
+            r, permu, r_ov = interferences.pop()
             changed = False
-            for permu in list(self.permu_map[r]): #copy iterable so we can modify original
-                if self.permu_map[r_ov].compatible(permu).empty():
-                    # this permutation has no compatible permutation in the overlapping
-                    # rule. thus, it can never occur
+            if self.permu_map[r_ov].compatible(permu).empty():
+                # this permutation has no compatible permutation in the overlapping
+                # rule. thus, it can never occur
+                try:
                     self.permu_map[r].remove(permu)
                     changed = True
+                except KeyError:
+                    pass
 
             if self.permu_map[r].empty():
                 # no possible configurations for this rule remain
@@ -597,7 +599,8 @@ class PermutedRuleset(object):
             elif changed:
                 # other rules overlapping with this one must be recalculated
                 for r_other in self.cell_rules_map.overlapping_rules(r):
-                    interferences.add((r_other, r))
+                    for p_ov in self.permu_map[r_other].compatible(permu):
+                        interferences.add((r_other, p_ov, r))
 
     def rereduce(self):
         """after computing the possible permutations of the rules, analyze and
@@ -606,7 +609,7 @@ class PermutedRuleset(object):
         split what would have been one rule-front into several.
 
         this is analagous to the previous 'reduce_rules' step, but with more
-        advanced logical analysis -- exploting information gleaned from the 
+        advanced logical analysis -- exploiting information gleaned from the 
         permutation phase
         """
 
