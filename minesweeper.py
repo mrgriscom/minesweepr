@@ -606,7 +606,7 @@ class PermutedRuleset(object):
         split what would have been one rule-front into several.
 
         this is analagous to the previous 'reduce_rules' step, but with more
-        advanced logical analysis -- exploting information gleaned from the 
+        advanced logical analysis -- exploiting information gleaned from the 
         permutation phase
         """
 
