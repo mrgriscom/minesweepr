@@ -100,6 +100,15 @@ td {
   border: 3px grey solid;
 }
 
+#legend {
+  color: white;
+  font-weight: bold;
+}
+
+#legend td {
+  padding: 5px;
+}
+
 {% block content_style %}
 {% endblock %}
 
@@ -208,8 +217,19 @@ td {
 
   </table>
 
-
-  </td></tr>
+  </td>
+  <td valign="bottom">
+    <table id="legend" border="0" cellspacing="0" cellpadding="5">
+      <tr>
+        <td id="clear" rowspan="2" valign="middle">SAFE</td>
+        <td id="ambig" align="center" width="150px;">UNCERTAIN</td>
+        <td id="mine" rowspan="2" valign="middle">MINE</td>
+      </tr>
+      <tr>
+        <td id="best" align="center">BEST GUESS</td>
+    </table>
+  </td>
+  </tr>
   </table>
   </div>
 

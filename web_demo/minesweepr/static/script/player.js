@@ -1,5 +1,7 @@
 
 $(document).ready(function() {
+    init_legend();
+
     init_canvas();
     $(window).resize(resize_canvas);
     resize_canvas();
@@ -723,6 +725,21 @@ function resize_canvas() {
   if (window.GAME) {
     GAME.refresh();
   }
+}
+
+function init_legend() {
+    $('#legend').css('background-color', HIDDEN_BG);
+    $('#legend #clear').css('background-color', prob_shade(0.));
+    $('#legend #mine').css('background-color', prob_shade(1.));
+
+    var mk_grad = function(start, end, vendor_prefix) {
+        return (vendor_prefix ? '-' + vendor_prefix + '-' : '') + 'linear-gradient(' + (vendor_prefix ? 'left' : 'to right') + ', ' + start + ' 0%, ' + end + ' 100%)';
+    };
+
+    $.each([null, 'moz', 'webkit', 'o', 'ms'], function(i, e) {
+            $('#legend #ambig').css('background', mk_grad(prob_shade(.001), prob_shade(.999), e));
+            $('#legend #best').css('background', mk_grad(prob_shade(.001, true), prob_shade(.999, true), e));
+        });
 }
 
 function fmt_pct(x) {
