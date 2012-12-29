@@ -37,6 +37,9 @@ $(document).ready(function() {
     $('#show_sol').click(function(e) {
         GAME.refresh();
       });
+    $('#show_sol').change(function(e) {
+        $('#legend')[$(e.target).attr('checked') ? 'show' : 'hide']();
+      });
     
     $('#play_auto').click(function(e) {
         var enabled = get_setting('play_auto');
