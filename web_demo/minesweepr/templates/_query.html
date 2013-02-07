@@ -2,15 +2,15 @@
 <head>
 <title>{% block title %}{% endblock %}</title>
 
+{% block content_script %}
+{% endblock %}
+
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
 <script type="text/javascript">
 
 SOLVER_URL = '{% url minesweepr.views.api_solve %}';
 
 </script>
-
-{% block content_script %}
-{% endblock %}
 
 </head>
 <body>
