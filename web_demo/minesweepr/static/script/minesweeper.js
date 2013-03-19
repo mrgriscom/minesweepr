@@ -51,6 +51,8 @@ function Board (topology) {
     }
     this.for_each_cell(function (pos, cell, board) {
         cell.name = board.topology.cell_name(pos);
+      });
+    this.for_each_cell(function (pos, cell, board) {
         board.init_cell_state(pos, cell);
       });
   }
@@ -81,13 +83,16 @@ function Board (topology) {
 
   this.init_cell_state = function(pos, cell) {
     if (cell.state != 'mine') {
-      var count = 0;
+      var neighboring_mines = [];
       this.for_each_neighbor(pos, function (pos, neighb, board) {
           if (neighb.state == 'mine') {
-            count++;
+            // neighbor list may contain duplicates due to wraparound topologies
+            if (neighboring_mines.indexOf(neighb.name) == -1) {
+              neighboring_mines.push(neighb.name);
+            }
           }
         });
-      cell.state = count;
+      cell.state = neighboring_mines.length;
     }
   }
 
