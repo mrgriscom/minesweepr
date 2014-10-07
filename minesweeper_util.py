@@ -72,7 +72,12 @@ class BoardCell(object):
     def is_unknown(self):
         return self.type == 'unkn'
 
-def generate_rules(board, total_mines, everything_mode):
+    def __hash__(self):
+        return hash(self.name)
+    def __eq__(self, o):
+        return self.name == o.name
+
+def generate_rules(board, total_mines, everything_mode=False):
     """reference algorithm for generating input rules / mine_prevalence from a
     game state
 
