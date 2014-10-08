@@ -2,6 +2,7 @@ import random
 import minesweeper_util as u
 import minesweeper as mnsw
 import math
+import time
 
 class MinesweeperGame(object):
     def __init__(self, num_mines=None, mine_prob=None):
@@ -214,11 +215,13 @@ def trial(new_game_str, tolerance=1e-6, first_safe=True, threaded=True, **kwargs
             def args():
                 while not stop:
                     yield (new_game_str, kwargs)
-            return pool.imap_unordered(run_trial, args())
+            return pool.imap_unordered(run_trial, args(), 256)
     else:
         def gen_trials():
             while not stop:
                 yield run_trial((new_game_str, kwargs))
+
+    start = time.time()
 
     for t in gen_trials():
         result, moves, hopeless = t
@@ -242,7 +245,9 @@ def trial(new_game_str, tolerance=1e-6, first_safe=True, threaded=True, **kwargs
         else:
             est_trials = int(round(p * (1-p) / tolerance**2))
 
-        print '%d/%d %d/%d %.4f+/-%.4f %d' % (total_wins, total_games, hopeless_wins, total_hopeless, p, err, est_trials)
+        rate = total_games / (time.time() - start)
+        est_time_left = (est_trials - total_games) / rate
+        print '%d/%d %d/%d %.4f+/-%.4f %d %.1f' % (total_wins, total_games, hopeless_wins, total_hopeless, p, err, est_trials, est_time_left)
 
         if err <= tolerance:
             break
