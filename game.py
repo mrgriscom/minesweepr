@@ -190,19 +190,38 @@ def locpref_strategy(strategy, game, safest):
             break
     return filtered_safest or safest
 
-BEGINNER_OLD = lambda: GridMinesweeperGame(8, 8, num_mines=10)
-BEGINNER = lambda: GridMinesweeperGame(9, 9, num_mines=10)
-INTERMEDIATE = lambda: GridMinesweeperGame(16, 16, num_mines=40)
-EXPERT = lambda: GridMinesweeperGame(16, 30, num_mines=99)
+BEGINNER = 'GridMinesweeperGame(8, 8, num_mines=10)'
+BEGINNER_NEW = 'GridMinesweeperGame(9, 9, num_mines=10)'
+INTERMEDIATE = 'GridMinesweeperGame(16, 16, num_mines=40)'
+EXPERT = 'GridMinesweeperGame(16, 30, num_mines=99)'
 
-def trial(new_game, tolerance=1e-6, first_safe=True, **kwargs):
+def run_trial(args):
+    gamestr, kwargs = args
+    return autoplay(eval(gamestr), **kwargs)
+
+def trial(new_game_str, tolerance=1e-6, first_safe=True, threaded=True, **kwargs):
+  try:
     total_games = 0
     total_wins = 0
     total_hopeless = 0
     hopeless_wins = 0
 
-    while True:
-        result, moves, hopeless = autoplay(new_game(), **kwargs)
+    stop = False
+    if threaded:
+        import multiprocessing
+        def gen_trials():
+            pool = multiprocessing.Pool()
+            def args():
+                while not stop:
+                    yield (new_game_str, kwargs)
+            return pool.imap_unordered(run_trial, args())
+    else:
+        def gen_trials():
+            while not stop:
+                yield run_trial((new_game_str, kwargs))
+
+    for t in gen_trials():
+        result, moves, hopeless = t
         loss_on_first_move = (result == 'loss' and moves == 1)
         if loss_on_first_move and first_safe:
             continue
@@ -227,3 +246,5 @@ def trial(new_game, tolerance=1e-6, first_safe=True, **kwargs):
 
         if err <= tolerance:
             break
+  finally:
+    stop = True
