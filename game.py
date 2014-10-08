@@ -1,6 +1,7 @@
 import random
 import minesweeper_util as u
 import minesweeper as mnsw
+import math
 
 class MinesweeperGame(object):
     def __init__(self, num_mines=None, mine_prob=None):
@@ -113,14 +114,15 @@ class BoardWrapper(object):
     def adjacent(self, cell_id):
         return dict((k, self.toCell(k)) for k in self.game.adjacent(cell_id))
 
-def autoplay(game):
+def autoplay(game, **kwargs):
     moves = 0
+    hopeless = False
     while True:
         #print game
         #print '----'
         result = game.outcome()
         if result is not None:
-            return result, moves
+            return result, moves, hopeless
 
         state = u.generate_rules(BoardWrapper(game), game.num_mines)
         if game.mode == 'mineprob':
@@ -152,18 +154,13 @@ def autoplay(game):
         else:
             # find safest
             min_risk = min(solution.values())
+            if min_risk > .5 - 1e-6:
+                hopeless = True
             safest = list(get_cells(min_risk))
 
-            """
-            if moves == 0:
-                OPENING_STRATEGY = None
-                if OPENING_STRATEGY == 'corner':
-                    safest = filter(lambda e: e[0] in (0, game.width - 1) and e[1] in (0, game.height - 1), safest)
-                elif OPENING_STRATEGY == 'side':
-                    safest = filter(lambda e: e[0] in (0, game.width - 1) or e[1] in (0, game.height - 1), safest)
-                elif OPENING_STRATEGY == 'interior':
-                    safest = filter(lambda e: e[0] not in (0, game.width - 1) and e[1] not in (0, game.height - 1), safest)
-            """
+            STRATEGY = kwargs.get('strategy')
+            if STRATEGY:
+                safest = locpref_strategy(STRATEGY, game, safest)
 
             move = random.choice(safest)
             game.sweep(move)
@@ -171,17 +168,41 @@ def autoplay(game):
 
         moves += 1
 
+# strategy like:
+#   [['corner']]           -- prefer corners
+#   [['corner', 'edge']]   -- prefer corners/edges
+#   [['corner'], ['edge']] -- prefer corners, then edges
+def locpref_strategy(strategy, game, safest):
+    def cell_type(cell):
+        edgex = (cell[0] in (0, game.width - 1))
+        edgey = (cell[1] in (0, game.height - 1))
+        if edgex and edgey:
+            return 'corner'
+        elif edgex or edgey:
+            return 'edge'
+        else:
+            return 'interior'
+
+    filtered_safest = None
+    for mode in strategy:
+        filtered_safest = filter(lambda e: cell_type(e) in mode, safest)
+        if filtered_safest:
+            break
+    return filtered_safest or safest
+
 BEGINNER_OLD = lambda: GridMinesweeperGame(8, 8, num_mines=10)
 BEGINNER = lambda: GridMinesweeperGame(9, 9, num_mines=10)
 INTERMEDIATE = lambda: GridMinesweeperGame(16, 16, num_mines=40)
 EXPERT = lambda: GridMinesweeperGame(16, 30, num_mines=99)
 
-def trial(new_game, first_safe=True):
+def trial(new_game, tolerance=1e-6, first_safe=True, **kwargs):
     total_games = 0
     total_wins = 0
+    total_hopeless = 0
+    hopeless_wins = 0
 
     while True:
-        result, moves = autoplay(new_game())
+        result, moves, hopeless = autoplay(new_game(), **kwargs)
         loss_on_first_move = (result == 'loss' and moves == 1)
         if loss_on_first_move and first_safe:
             continue
@@ -189,5 +210,20 @@ def trial(new_game, first_safe=True):
         total_games += 1
         if result == 'win':
             total_wins += 1
+        if hopeless:
+            total_hopeless += 1
+            if result == 'win':
+                hopeless_wins += 1
 
-        print total_games, total_wins, float(total_wins) / total_games
+        p = float(total_wins) / total_games
+        err = (p * (1-p) / total_games)**.5
+        if err == 0:
+            err = 1.
+            est_trials = -1
+        else:
+            est_trials = int(round(p * (1-p) / tolerance**2))
+
+        print '%d/%d %d/%d %.4f+/-%.4f %d' % (total_wins, total_games, hopeless_wins, total_hopeless, p, err, est_trials)
+
+        if err <= tolerance:
+            break
