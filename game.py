@@ -215,7 +215,7 @@ def trial(new_game_str, tolerance=1e-6, first_safe=True, threaded=True, **kwargs
             def args():
                 while not stop:
                     yield (new_game_str, kwargs)
-            return pool.imap_unordered(run_trial, args(), 64)
+            return pool.imap_unordered(run_trial, args())
     else:
         def gen_trials():
             while not stop:
@@ -249,7 +249,7 @@ def trial(new_game_str, tolerance=1e-6, first_safe=True, threaded=True, **kwargs
         est_time_left = (est_trials - total_games) / rate
         terminate = (err <= tolerance)
 
-        if terminate or total_games % 1000 == 0:
+        if terminate or total_games % 5 == 0:
             print '%d/%d %d/%d %.4f+/-%.4f %d %.1f' % (total_wins, total_games, hopeless_wins, total_hopeless, p, err, est_trials, est_time_left)
 
         if terminate:

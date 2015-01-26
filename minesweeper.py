@@ -51,7 +51,7 @@ def solve(rules, mine_prevalence, other_tag=None):
     cell_probs = cell_probabilities(stats, mine_prevalence, all_cells)
     return dict(expand_cells(cell_probs, other_tag))
 
-class Rule(object):
+class Rule(ImmutableMixin):
     """basic representation of an axiom from a minesweeper game: N mines
     contained within a set of M cells.
 
@@ -78,10 +78,13 @@ class Rule(object):
             len(self.cells)
         )
 
+    def _canonical(self):
+        return (self.num_mines, self.cells)
+
     def __repr__(self):
         return 'Rule(num_mines=%d, cells=%s)' % (self.num_mines, sorted(list(self.cells)))
 
-class Rule_(object):
+class Rule_(ImmutableMixin):
     """analogue of 'Rule', but containing supercells (sets of 'ordinary' cells
     that only ever appear together).
 
@@ -139,6 +142,9 @@ class Rule_(object):
         """build a FrontTally from this *trivial* rule only"""
         return FrontTally.from_rule(self)
 
+    def _canonical(self):
+        return (self.num_mines, self.cells_)
+
     def __repr__(self):
         return 'Rule_(num_mines=%d, num_cells=%d, cells_=%s)' % (self.num_mines, self.num_cells,
             sorted([sorted(list(cell_)) for cell_ in self.cells_]))
@@ -182,7 +188,7 @@ def reduce_rules(rules):
     rr.add_rules(rules)
     return rr.reduce_all()
 
-class Reduceable(object):
+class Reduceable(ImmutableMixin):
     """during the logical deduction phase, if all rules are nodes in a graph,
     this represents a directed edge in that graph indicating 'superrule' can
     be reduced by 'subrule'"""
@@ -210,6 +216,9 @@ class Reduceable(object):
 
     def contains(self, rule):
         return rule in (self.superrule, self.subrule)
+
+    def _canonical(self):
+        return (self.superrule, self.subrule)
 
     def __repr__(self):
         return 'Reduceable(superrule=%s, subrule=%s)' % (self.superrule, self.subrule)
@@ -341,7 +350,7 @@ class RuleReducer(object):
 
         return self.active_rules
 
-class Permutation(object):
+class Permutation(ImmutableMixin):
     """a single permutation of N mines among a set of (super)cells"""
 
     def __init__(self, mapping):
@@ -387,14 +396,8 @@ class Permutation(object):
         """
         return product(choose(len(cell_), k) for cell_, k in self.mapping.iteritems())
 
-    def __eq__(self, x):
-        return self.__dict__ == x.__dict__
-
-    def __ne__(self, x):
-        return not self.__eq__(x)
-
-    def __hash__(self):
-        return set_(self.mapping.iteritems()).__hash__()
+    def _canonical(self):
+        return tuple(self.mapping.iteritems())
 
     def __repr__(self):
         cell_counts = sorted([(sorted(list(cell)), count) for cell, count in self.mapping.iteritems()])
@@ -672,6 +675,10 @@ class PermutedRuleset(object):
         """enumerate all possible mine configurations for this ruleset"""
         for mineconfig in EnumerationState(self).enumerate():
             yield mineconfig
+
+    def __repr__(self):
+        import pprint
+        return 'PermutedRuleset(\n %s)' % pprint.pformat(self.permu_map)
 
 def permute_and_interfere(rules):
     """process the set of rules and analyze the relationships and constraints
@@ -1103,7 +1110,7 @@ def discrete_relative_likelihood(n, k, k0):
 
     return float(fact_div(k0, k) * fact_div(n - k0, n - k))
 
-class UnchartedCell(object):
+class UnchartedCell(ImmutableMixin):
     """a meta-cell object that represents all the 'other' cells on the board
     that aren't explicitly mentioned in a rule. see expand_cells()"""
 
@@ -1122,7 +1129,10 @@ class UnchartedCell(object):
         if self.size > 0:
             yield None
 
-class FixedProbTally(object):
+    def _canonical(self):
+        return (self.size,)
+
+class FixedProbTally(ImmutableMixin):
     """a meta-tally to represent when all 'other' cells are uncounted and
     assumed to have a fixed mine probability"""
     def __init__(self, p):
@@ -1130,6 +1140,9 @@ class FixedProbTally(object):
 
     def collapse(self):
         yield (UnchartedCell(), self.p)
+
+    def _canonical(self):
+        return (self.p,)
 
 def expand_cells(cell_probs, other_tag):
     """back-convert the expected values for all supercells into per-cell

@@ -64,3 +64,15 @@ def map_reduce(data, emitfunc=lambda rec: [(rec,)], reducefunc=lambda v: v):
             mapped[k].append(v)
     return dict((k, reducefunc(v)) for k, v in mapped.iteritems())
 
+class ImmutableMixin(object):
+    """mixin for immutable, hashable objects"""
+
+    def _canonical(self):
+        """return the 'core' data of this object in a hashable format, usually a tuple"""
+        assert False, 'must override'
+    def __eq__(self, o):
+        return type(self) == type(o) and self._canonical() == o._canonical()
+    def __ne__(self, o):
+        return not (self == o)
+    def __hash__(self):
+        return hash(self._canonical())
