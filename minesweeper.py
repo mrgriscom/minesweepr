@@ -696,20 +696,21 @@ class EnumerationState(object):
         """
         ruleset -- None when cloning an existing state
         """
-        if ruleset is not None:
-            # normal initialization
+        if ruleset is None:
+            # 'naked' object for cloning
+            return
 
-            # set of Permutations -- one per rule -- that have been 'fixed' for
-            # the current configuration-in-progress
-            self.fixed = set()
-            # subset of ruleset whose permutations are still 'open'
-            self.free = dict((rule, set(permu_set)) for rule, permu_set in ruleset.permu_map.iteritems())
+        # set of Permutations -- one per rule -- that have been 'fixed' for
+        # the current configuration-in-progress
+        self.fixed = set()
+        # subset of ruleset whose permutations are still 'open'
+        self.free = dict((rule, set(permu_set)) for rule, permu_set in ruleset.permu_map.iteritems())
 
-            # helper function (closure)
-            self.overlapping_rules = lambda rule: ruleset.cell_rules_map.overlapping_rules(rule)
-            # index for constraining overlapping permutations
-            # mapping: (permutation, overlapping rule) -> PermutationSet of valid permutations for overlapping rule
-            self.compatible_rule_index = self.build_compatibility_index(ruleset)
+        # helper function (closure)
+        self.overlapping_rules = lambda rule: ruleset.cell_rules_map.overlapping_rules(rule)
+        # index for constraining overlapping permutations
+        # mapping: (permutation, overlapping rule) -> PermutationSet of valid permutations for overlapping rule
+        self.compatible_rule_index = self.build_compatibility_index(ruleset.permu_map)
             
     def clone(self):
         """clone this state"""
@@ -720,13 +721,13 @@ class EnumerationState(object):
         state.compatible_rule_index = self.compatible_rule_index
         return state
 
-    def build_compatibility_index(self, ruleset):
+    def build_compatibility_index(self, rspm):
         """build the constraint index"""
         index = {}
-        for rule, permu_set in ruleset.permu_map.iteritems():
+        for rule, permu_set in rspm.iteritems():
             for permu in permu_set:
                 for rule_ov in self.overlapping_rules(rule):
-                    index[(permu, rule_ov)] = ruleset.permu_map[rule_ov].compatible(permu)
+                    index[(permu, rule_ov)] = rspm[rule_ov].compatible(permu)
         return index
 
     def is_complete(self):
@@ -758,11 +759,10 @@ class EnumerationState(object):
         self.fixed.add(permu)
         del self.free[rule]
 
-        for related_rule in self.overlapping_rules(rule):
-            # must check this on each iteration to properly handle dependency cycles
-            if related_rule not in self.free:
-                continue
-
+        # constrain overlapping rules
+        cascades = []
+        affected_rules = filter(lambda r: r in self.free, self.overlapping_rules(rule))
+        for related_rule in affected_rules:
             # PermutationSet of the related rule, constrained _only by_ the rule/permutation just fixed
             allowed_permus = self.compatible_rule_index[(permu, related_rule)]
             # further constrain the related rule with this new set -- is now properly constrained by
@@ -775,7 +775,12 @@ class EnumerationState(object):
                 raise ValueError()
             elif len(linked_permus) == 1:
                 # only one possiblity; constrain further
-                self._propogate(related_rule, peek(linked_permus))
+                cascades.append((related_rule, peek(linked_permus)))
+
+        # cascade if any other rules are now fully constrained
+        for related_rule, constrained_permu in cascades:
+            if related_rule in self.free: # may have already been constrained by prior recurisve call
+                self._propogate(related_rule, constrained_permu)
 
     def mine_config(self):
         """convert the set of fixed permutations into a single Permutation
