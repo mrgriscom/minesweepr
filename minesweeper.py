@@ -373,8 +373,8 @@ class Permutation(ImmutableMixin):
     def combine(self, permu):
         """return a new permutation by combining this permutation with
         'permu'
-
         the permutations must be compatible!"""
+        assert all(permu.mapping[k] == v for k, v in self.mapping.iteritems() if k in permu.mapping)
         mapping = dict(self.mapping)
         mapping.update(permu.mapping)
         return Permutation(mapping)
@@ -501,7 +501,7 @@ class PermutationSet(object):
         return PermutationSet(cell_subset, k_sub.pop(), permu_subset)
 
     def decompose(self):
-        """see decompose(); optimizes if set has not been constrained because
+        """see _decompose(); optimizes if set has not been constrained because
         full permu-sets decompose to themselves"""
         return self._decompose() if self.constrained else [self]
 
@@ -664,6 +664,7 @@ class PermutedRuleset(object):
 
     def trivial_rule(self):
         """return the singleton rule of this *trivial* ruleset"""
+        assert self.is_trivial()
         singleton = peek(self.rules)
 
         # postulate: any singleton rule must also be trivial
@@ -877,9 +878,7 @@ class FrontTally(object):
     @staticmethod
     def from_rule(rule):
         """tally a trivial rule"""
-        if not rule.is_trivial():
-            raise ValueError()
-
+        assert rule.is_trivial()
         return FrontTally({rule.num_mines: FrontSubtally.mk(choose(rule.num_cells, rule.num_mines), {peek(rule.cells_): rule.num_mines})})
 
     @staticmethod
