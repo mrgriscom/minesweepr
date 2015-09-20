@@ -397,7 +397,7 @@ class Permutation(ImmutableMixin):
         return product(choose(len(cell_), k) for cell_, k in self.mapping.iteritems())
 
     def _canonical(self):
-        return tuple(self.mapping.iteritems())
+        return tuple(sorted(self.mapping.iteritems(), key=hash))
 
     def __repr__(self):
         cell_counts = sorted([(sorted(list(cell)), count) for cell, count in self.mapping.iteritems()])
@@ -453,6 +453,10 @@ class PermutationSet(object):
         self.k = k
         self.permus = permus
         self.constrained = False
+
+    def _immutable(self):
+        """helper function for comparison in unit tests"""
+        return (self.cells_, self.k, set_(self.permus))
 
     @staticmethod
     def from_rule(rule):
