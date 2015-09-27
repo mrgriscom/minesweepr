@@ -397,7 +397,7 @@ class Permutation(ImmutableMixin):
         return product(choose(len(cell_), k) for cell_, k in self.mapping.iteritems())
 
     def _canonical(self):
-        return tuple(sorted(self.mapping.iteritems(), key=hash))
+        return tuple(sorted(self.mapping.iteritems(), key=lambda (k, v): hash(k)))
 
     def __repr__(self):
         cell_counts = sorted([(sorted(list(cell)), count) for cell, count in self.mapping.iteritems()])

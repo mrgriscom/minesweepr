@@ -3,6 +3,9 @@ import collections
 import re
 from minesweeper import *
 
+def sets(o):
+    return set_(sets(k) if hasattr(k, '__iter__') else k for k in o)
+
 def r(s):
     """helper function to generate a (raw) Rule"""
     mines, cells = s.split(':')
@@ -119,13 +122,17 @@ class Test(unittest.TestCase):
         self.assertEqual(Reduceable(R('4:a,b,c,d,e,f,g,h'), R('0:a,b,c,d')).metric(), Reduceable(R('4:a,b,c,d,e,f,g,h'), R('4:a,b,c,d')).metric())
 
     def test_reduce_rules(self):
+        # degenerate rules disappear
         self.assertEqual(reduce_rules([R('0:')]), set([]))
         self.assertEqual(reduce_rules([R('1:a')]), set([R('1:a')]))
+        # duplicate rules disappear
         self.assertEqual(reduce_rules([R('1:a'), R('1:a')]), set([R('1:a')]))
         self.assertEqual(reduce_rules([R('1:a,b'), R('1:a,c')]), set([R('1:a,b'), R('1:a,c')]))
         self.assertEqual(reduce_rules([R('2:ab,cde,f,g'), R('1:f,g')]), set([R('1:ab,cde'), R('1:f,g')]))
         self.assertEqual(reduce_rules([R('2:a,b,x'), R('1:b'), R('1:b,c')]), set([R('1:a,x'), R('1:b'), R('0:c')]))
+        # chained reduction
         self.assertEqual(reduce_rules([R('2:a,x,y,z'), R('2:a,b,x'), R('1:b'), R('1:b,c')]), set([R('1:a,x'), R('1:b'), R('0:c'), R('1:y,z')]))
+        # decomposition then reduction
         self.assertEqual(reduce_rules([R('1:a,b,c,d'), R('0:c,d,e')]), set([R('1:a,b'), R('0:c'), R('0:d'), R('0:e')]))
         self.assertEqual(reduce_rules([R('3:a,b,c,d'), R('3:c,d,e')]), set([R('1:a,b'), R('1:c'), R('1:d'), R('1:e')]))
 
@@ -156,6 +163,7 @@ class Test(unittest.TestCase):
 
     def test_permutation_compatible_and_combine(self):
         self.assertTrue(P('').compatible(P('')))
+        self.assertTrue(P('a0').compatible(P('')))
         self.assertTrue(P('a0').compatible(P('a0')))
         self.assertTrue(P('a1').compatible(P('a1')))
         self.assertTrue(P('a0').compatible(P('b1')))
@@ -164,6 +172,7 @@ class Test(unittest.TestCase):
         self.assertFalse(P('abc1de1f0').compatible(P('abc2de1ghi2')))
 
         self.assertEqual(P('').combine(P('')), P(''))
+        self.assertEqual(P('a0').combine(P('')), P('a0'))
         self.assertEqual(P('a0').combine(P('a0')), P('a0'))
         self.assertEqual(P('a1').combine(P('a1')), P('a1'))
         self.assertEqual(P('a0').combine(P('b1')), P('a0b1'))
@@ -210,6 +219,7 @@ class Test(unittest.TestCase):
             if not any(p.compatible(sp) for sp in subset1.permus):
                 pset.remove(p)
         self.assertEqual(_(pset.decompose()), _([subset1, subset2]))
+        # decomposed rulesets can still have constrained permutation sets
         subset1.remove(P('ab2c0d0'))
         for p in list(pset.permus):
             if p.compatible(P('ab2c0d0')):
@@ -221,7 +231,90 @@ class Test(unittest.TestCase):
                 pset.remove(p)
         self.assertEqual(_(pset.decompose()), _([subset1, subset2]))
 
+    def test_ruleset_cross_eliminate_and_rereduce(self):
+        def compare(rules, output, rereduced=None):
+            _ = lambda prs: set(ps._immutable()[2] for ps in prs.permu_map.values())
 
+            prs = PermutedRuleset(set(rules))
+            prs.cross_eliminate()
+            if output is not None:
+                self.assertEqual(_(prs), sets(output))
+            prs.rereduce()
+            if rereduced is not None:
+                self.assertEqual(_(prs), sets(rereduced))
+
+        # rules constrained due to overlap
+        compare([R('1:a,b,c'), R('2:b,c,d')],
+                [[P('a0b1c0'), P('a0b0c1')], [P('b1c0d1'), P('b0c1d1')]],
+                [[P('a0')], [P('b1c0'), P('b0c1')], [P('d1')]])
+        # constraining causes further cascade
+        compare([R('2:a,b,c'), R('1:b,c,d'), R('1:c,d,e'), R('1:d,e,f'), R('1:e,f,g')],
+                [[P('a1b1c0'), P('a1b0c1')],
+                 [P('b1c0d0'), P('b0c1d0')],
+                 [P('c1d0e0'), P('c0d0e1')],
+                 [P('d0e1f0'), P('d0e0f1')],
+                 [P('e1f0g0'), P('e0f1g0')],
+                ],
+                [[P('a1')], [P('b1c0'), P('b0c1')], [P('c1e0'), P('c0e1')], [P('d0')], [P('e1f0'), P('e0f1')], [P('g0')]])
+        # rule loop determines all mines (in a way that reduce_rules could not)
+        compare([
+                R('2:a,b,c,s,t'),
+                R('2:b,c,d'),
+                R('2:c,d,e'),
+                R('2:d,e,f,g,h'),
+                R('2:g,h,i'),
+                R('2:h,i,j'),
+                R('2:i,j,k,l,m'),
+                R('2:l,m,n'),
+                R('2:m,n,o'),
+                R('2:n,o,p,q,r'),
+                R('2:q,r,s'),
+                R('2:r,s,t'),
+            ], [
+                [P('a0b0c1s1t0')],
+                [P('b0c1d1')],
+                [P('c1d1e0')],
+                [P('d1e0f0g0h1')],
+                [P('g0h1i1')],
+                [P('h1i1j0')],
+                [P('i1j0k0l0m1')],
+                [P('l0m1n1')],
+                [P('m1n1o0')],
+                [P('n1o0p0q0r1')],
+                [P('q0r1s1')],
+                [P('r1s1t0')],
+            ], [
+                [P('a0')], [P('b0')], [P('c1')], [P('d1')], [P('e0')],
+                [P('f0')], [P('g0')], [P('h1')], [P('i1')], [P('j0')],
+                [P('k0')], [P('l0')], [P('m1')], [P('n1')], [P('o0')],
+                [P('p0')], [P('q0')], [P('r1')], [P('s1')], [P('t0')]])
+        # impossible configurations
+        prs = PermutedRuleset([R('1:a,b,c'), R('2:b,c,d'), R('2:a,b,d'), R('2:a,c,d')])
+        self.assertRaises(InconsistencyError, lambda: prs.cross_eliminate())
+        prs = PermutedRuleset([R('1:a,b,c,d'), R('3:b,c,d,e')])
+        self.assertRaises(InconsistencyError, lambda: prs.cross_eliminate())
+        # more complex re-reductions
+        compare([R('2:a,b,c,d'), R('1:a,b,x'), R('1:c,d,y')], None,
+                [[P('a1b0'), P('a0b1')], [P('c1d0'), P('c0d1')], [P('x0')], [P('y0')]])
+        compare([R('3:a,b,c,d,e,f'), R('1:e,f,y'), R('2:a,b,c,d,x'), R('1:x,k,l'), R('2:k,l,m'), R('1:b,c,q')], None,
+                [[P('a1b1c0d0'), P('a1b0c1d0'), P('a1b0c0d1'), P('a0b1c0d1'), P('a0b0c1d1')],
+                 [P('b1c0q0'), P('b0c1q0'), P('b0c0q1')], 
+                 [P('e1f0'), P('e0f1')], [P('k1l0'), P('k0l1')], [P('x0')], [P('y0')], [P('m1')]])
+
+
+
+    # split_fronts/partition
+    # enumerate
+    # trivial front?
+
+
+    def test_uncharted_cell(self):
+        c = UnchartedCell(0)
+        self.assertEqual(len(c), 0)
+        self.assertEqual(list(c), [])
+        c = UnchartedCell(50)
+        self.assertEqual(len(c), 50)
+        self.assertEqual(list(c), [None])
 
 
 if __name__ == '__main__':
