@@ -26,7 +26,7 @@ class executor(threading.Thread):
         self.kwargs = kwargs
 
     def start(self):
-        project_root = filter(lambda p: p, sys.path)[0] # sketchy
+        project_root = next(filter(lambda p: p, sys.path)) # sketchy
         self.p = Popen(['python', os.path.join(os.getcwd(), __file__)], cwd=project_root, stdin=PIPE, stdout=PIPE, stderr=PIPE)
 
         threading.Thread.start(self)
@@ -34,7 +34,7 @@ class executor(threading.Thread):
     def run(self):
         payload = {'task': self.taskname, 'args': self.args, 'kwargs': self.kwargs}
         try:
-            out, err = self.p.communicate(ser.dumps(payload))
+            out, err = self.p.communicate(ser.dumps(payload).encode())
             self.result = ((False, err) if err else (True, ser.loads(out)))
         except:
             # various errors if process is terminated
@@ -57,7 +57,7 @@ class executor(threading.Thread):
             if success:
                 return result
             else:
-                raise Exception('error in task> ' + result)
+                raise Exception('error in task> ' + result.decode())
 
 def _exec(payload):
     taskname = payload['task']
@@ -70,4 +70,4 @@ def _exec(payload):
 
 if __name__ == "__main__":
     sys.path.insert(0, os.getcwd()) # cwd set to django project root dir
-    print ser.dumps(_exec(ser.load(sys.stdin)))
+    print(ser.dumps(_exec(ser.load(sys.stdin))))

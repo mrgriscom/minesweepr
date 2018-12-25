@@ -1,7 +1,8 @@
 import collections
 import itertools
 import operator
-from util import *
+from .util import *
+from functools import reduce
 
 set_ = frozenset
 
@@ -176,9 +177,9 @@ def condense_supercells(rules):
     cell_rules_map = map_reduce(rules, lambda rule: [(cell, rule) for cell in rule.cells], set_)
     # for each 'list of rules appearing in', list of cells that share that ruleset (these cells
     # thus only ever appear together in the same rules)
-    rules_supercell_map = map_reduce(cell_rules_map.iteritems(), lambda (cell, rules): [(rules, cell)], set_)
+    rules_supercell_map = map_reduce(cell_rules_map.items(), lambda x: [(x[1], x[0])], set_)
     # for each original rule, list of 'supercells' appearing in that rule
-    rule_supercells_map = map_reduce(rules_supercell_map.iteritems(), lambda (rules, cell_): [(rule, cell_) for rule in rules], set_)
+    rule_supercells_map = map_reduce(rules_supercell_map.items(), lambda x: [(rule, x[1]) for rule in x[0]], set_)
 
     return ([rule.condensed(rule_supercells_map) for rule in rules], rules_supercell_map.values())
 
@@ -374,7 +375,7 @@ class Permutation(ImmutableMixin):
         """return a new permutation by combining this permutation with
         'permu'
         the permutations must be compatible!"""
-        assert all(permu.mapping[k] == v for k, v in self.mapping.iteritems() if k in permu.mapping)
+        assert all(permu.mapping[k] == v for k, v in self.mapping.items() if k in permu.mapping)
         mapping = dict(self.mapping)
         mapping.update(permu.mapping)
         return Permutation(mapping)
@@ -394,13 +395,13 @@ class Permutation(ImmutableMixin):
         e.g., N mines in a supercell of M cells has (M choose N) actual
         configurations
         """
-        return product(choose(len(cell_), k) for cell_, k in self.mapping.iteritems())
+        return product(choose(len(cell_), k) for cell_, k in self.mapping.items())
 
     def _canonical(self):
-        return tuple(sorted(self.mapping.iteritems(), key=lambda (k, v): hash(k)))
+        return tuple(sorted(self.mapping.items(), key=lambda x: hash(x[0])))
 
     def __repr__(self):
-        cell_counts = sorted([(sorted(list(cell)), count) for cell, count in self.mapping.iteritems()])
+        cell_counts = sorted([(sorted(list(cell)), count) for cell, count in self.mapping.items()])
         cell_frags = ['%s:%d' % (','.join(str(c) for c in cell), count) for cell, count in cell_counts]
         return '{%s}' % ' '.join(cell_frags)
 
@@ -629,7 +630,7 @@ class PermutedRuleset(object):
 
         superseded_rules = set()
         decompositions = {}
-        for rule, permu_set in self.permu_map.iteritems():
+        for rule, permu_set in self.permu_map.items():
             decomp = permu_set.decompose()
             if len(decomp) > 1:
                 superseded_rules.add(rule)
@@ -709,7 +710,7 @@ class EnumerationState(object):
         # the current configuration-in-progress
         self.fixed = set()
         # subset of ruleset whose permutations are still 'open'
-        self.free = dict((rule, set(permu_set)) for rule, permu_set in ruleset.permu_map.iteritems())
+        self.free = dict((rule, set(permu_set)) for rule, permu_set in ruleset.permu_map.items())
 
         # helper function (closure)
         self.overlapping_rules = lambda rule: ruleset.cell_rules_map.overlapping_rules(rule)
@@ -721,7 +722,7 @@ class EnumerationState(object):
         """clone this state"""
         state = EnumerationState()
         state.fixed = set(self.fixed)
-        state.free = dict((rule, set(permu_set)) for rule, permu_set in self.free.iteritems())
+        state.free = dict((rule, set(permu_set)) for rule, permu_set in self.free.items())
         state.overlapping_rules = self.overlapping_rules
         state.compatible_rule_index = self.compatible_rule_index
         return state
@@ -729,7 +730,7 @@ class EnumerationState(object):
     def build_compatibility_index(self, rspm):
         """build the constraint index"""
         index = {}
-        for rule, permu_set in rspm.iteritems():
+        for rule, permu_set in rspm.items():
             for permu in permu_set:
                 for rule_ov in self.overlapping_rules(rule):
                     index[(permu, rule_ov)] = rspm[rule_ov].compatible(permu)
@@ -845,7 +846,7 @@ class FrontTally(object):
         return len(self.subtallies) == 1
 
     def __iter__(self):
-        return self.subtallies.iteritems()
+        return iter(self.subtallies.items())
 
     def normalize(self):
         """normalize sub-tally totals into relative weights such that
@@ -860,7 +861,7 @@ class FrontTally(object):
         all sub-tallies"""
         self.normalize()
         collapsed = map_reduce(self.subtallies.values(), lambda subtally: subtally.collapse(), sum)
-        for entry in collapsed.iteritems():
+        for entry in collapsed.items():
             yield entry
 
     def scale_weights(self, scalefunc):
@@ -895,7 +896,7 @@ class FrontTally(object):
         """
 
         metacell = UnchartedCell(num_uncharted_cells)
-        return FrontTally(dict((num_mines, FrontSubtally.mk(k, {metacell: num_mines})) for num_mines, k in mine_totals.iteritems()))
+        return FrontTally(dict((num_mines, FrontSubtally.mk(k, {metacell: num_mines})) for num_mines, k in mine_totals.items()))
 
     def __repr__(self):
         return str(dict(self.subtallies))
@@ -917,18 +918,18 @@ class FrontSubtally(object):
         """add a configuration to the tally"""
         mult = config.multiplicity() # weight by multiplicity
         self.total += mult
-        for cell_, n in config.mapping.iteritems():
+        for cell_, n in config.mapping.items():
             self.tally[cell_] += n * mult
 
     def finalize(self):
         """after all configurations have been summed, compute relative
         prevalence from totals"""
-        self.tally = dict((cell_, n / float(self.total)) for cell_, n in self.tally.iteritems())
+        self.tally = dict((cell_, n / float(self.total)) for cell_, n in self.tally.items())
 
     def collapse(self):
         """helper function for FrontTally.collapse(); emit all cell expected
         mine values weighted by this sub-tally's weight"""
-        for cell_, expected_mines in self.tally.iteritems():
+        for cell_, expected_mines in self.tally.items():
             yield (cell_, self.total * expected_mines)
 
     @staticmethod
@@ -1064,7 +1065,8 @@ def combine_fronts(tallies, num_uncharted_cells, at_large_mines):
 
     tallies = list(tallies) # we need guaranteed iteration order
     # iterate over the cartesian product of sub-tallies from each tally
-    for combination in (combo(e) for e in itertools.product(*tallies)):
+    for e in itertools.product(*tallies):
+        combination = combo(e)
         num_tallied_mines = sum(s.num_mines for s in combination)
         # number of mines lying in the 'other' cells
         num_free_mines = at_large_mines - num_tallied_mines
