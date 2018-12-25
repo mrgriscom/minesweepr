@@ -1,18 +1,17 @@
-from django.http import HttpResponse, HttpResponseRedirect, HttpResponseNotFound
+from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.template import RequestContext
-from django.shortcuts import render_to_response
+from django.shortcuts import render
 from django.conf import settings
 import json
 import logging
 import time
-from tasks import minesweeper_solve
-from taskexec import exec_capped, ExecTimeOut
+from .tasks import minesweeper_solve
+from .taskexec import exec_capped, ExecTimeOut
 import itertools
 
 @csrf_exempt
 def api_solve(request):
-    payload = json.loads(request.raw_post_data)
+    payload = json.loads(request.body)
     logging.debug('>>' + str(payload))
 
     start = time.time()
@@ -23,7 +22,7 @@ def api_solve(request):
     log_result(payload, result, time.time() - start)
 
     logging.debug('<<' + str(result))
-    return HttpResponse(json.dumps(result), 'text/json')
+    return JsonResponse(result)
 
 def log_result(payload, result, rtt):
     num_rules = len(payload['rules'])
@@ -42,4 +41,4 @@ def template_static(request):
     url = request.path[1:-1]
     assert url.startswith(settings.BASE_STATIC_URL)
     template = url[len(settings.BASE_STATIC_URL):] + '.html'
-    return render_to_response(template, {}, context_instance=RequestContext(request))
+    return render(request, template, {})

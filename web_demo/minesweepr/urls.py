@@ -1,16 +1,9 @@
-from django.conf.urls.defaults import *
-from django.conf import settings
+from django.urls import path
 
-dynurls = patterns('minesweepr.views',
-    (r'^api/minesweeper_solve/$', 'api_solve'),
-)
+from . import views
 
-staticurls = patterns('minesweepr.views',
-    (r'^player/$', 'template_static'),
-    (r'^query/$', 'template_static'),
-)
-
-urlpatterns = patterns('',
-    ('^%s' % settings.BASE_URL, include(dynurls)),
-    ('^%s' % settings.BASE_STATIC_URL, include(staticurls)),            
-)
+urlpatterns = [
+    path('player/', views.template_static),
+    path('query/', views.template_static),
+    path('api/minesweeper_solve/', views.api_solve, name='minesweepr.views.api_solve'),
+]
