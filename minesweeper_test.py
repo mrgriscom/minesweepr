@@ -233,7 +233,7 @@ class Test(unittest.TestCase):
 
     def test_ruleset_cross_eliminate_and_rereduce(self):
         def compare(rules, output, rereduced=None):
-            _ = lambda prs: set(ps._immutable()[2] for ps in prs.permu_map.values())
+            _ = lambda prs: set(set_(ps.permus) for ps in prs.permu_map.values())
 
             prs = PermutedRuleset(set(rules))
             prs.cross_eliminate()
@@ -301,9 +301,29 @@ class Test(unittest.TestCase):
                  [P('b1c0q0'), P('b0c1q0'), P('b0c0q1')], 
                  [P('e1f0'), P('e0f1')], [P('k1l0'), P('k0l1')], [P('x0')], [P('y0')], [P('m1')]])
 
+    def test_partition(self):
+        # TODO basic cases
 
 
-    # split_fronts/partition
+        _ = lambda prs: set(ps._immutable()[2] for ps in prs.permu_map.values())
+
+        prs = permute_and_interfere(set([R('3:a,b,c,d,e,f'), R('1:e,f,y'), R('2:a,b,c,d,x'), R('1:x,k,l'), R('2:k,l,m'), R('1:b,c,q')]))
+        fronts = prs.split_fronts()
+        self.assertEqual(sets(map(_, fronts)), sets([
+                    [
+                        [P('a1b1c0d0'), P('a1b0c1d0'), P('a1b0c0d1'), P('a0b1c0d1'), P('a0b0c1d1')],
+                        [P('b1c0q0'), P('b0c1q0'), P('b0c0q1')]
+                    ], 
+                    [[P('e1f0'), P('e0f1')]],
+                    [[P('k1l0'), P('k0l1')]],
+                    [[P('x0')]],
+                    [[P('y0')]],
+                    [[P('m1')]]
+                ]))
+
+
+
+
     # enumerate
     # trivial front?
 
