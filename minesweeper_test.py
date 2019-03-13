@@ -16,14 +16,14 @@ def r(s):
 def R(s):
     """helper function to generate a Rule_"""
     mines, cells = s.split(':')
-    cells = map(list, cells.split(',')) if cells else []
+    cells = list(map(list, cells.split(','))) if cells else []
     return Rule_.mk(int(mines), cells)
 
 def P(s):
     """helper function to build a permutation"""
     sp = re.split('([0-9]+)', s)
     assert len(sp) % 2 == 1 and not sp[-1]
-    return Permutation((frozenset(sp[i]), int(sp[i+1])) for i in xrange(0, len(sp[:-1]), 2))
+    return Permutation((frozenset(sp[i]), int(sp[i+1])) for i in range(0, len(sp[:-1]), 2))
 
 class Test(unittest.TestCase):
     def test_rule_init(self):

@@ -17,10 +17,10 @@ class MinesweeperGame(object):
             self.mode = 'minecount'
         else:
             assert mine_prob >= 0. and mine_prob <= 1.
-            mines = [random.random() < mine_prob for i in xrange(self.num_cells)]
+            mines = [random.random() < mine_prob for i in range(self.num_cells)]
             self.mode = 'mineprob'
             self.mine_prob = mine_prob
-        self.num_mines = len(filter(None, mines))
+        self.num_mines = len([m for m in mines if m])
         self.mines = dict((c, m) for c, m in zip(self.cell_ids, mines))
 
         self.cells = dict((c, None) for c in self.cell_ids)
@@ -77,14 +77,14 @@ class GridMinesweeperGame(MinesweeperGame):
         super(GridMinesweeperGame, self).__init__(*args, **kwargs)
     
     def gen_cells(self):
-        for i in xrange(self.width):
-            for j in xrange(self.height):
+        for i in range(self.width):
+            for j in range(self.height):
                 yield (i, j)
 
     def adjacent(self, cell):
         i, j = cell
-        for ni in xrange(i - 1, i + 2):
-            for nj in xrange(j - 1, j + 2):
+        for ni in range(i - 1, i + 2):
+            for nj in range(j - 1, j + 2):
                 if (ni >= 0 and ni < self.width and
                     nj >= 0 and nj < self.height and
                     (ni, nj) != (i, j)):
@@ -140,7 +140,7 @@ def autoplay(game, **kwargs):
                             yield e
         def get_cells(p):
             EPSILON = 1e-6
-            return _cells(k for k, v in solution.iteritems() if abs(v - p) < EPSILON)
+            return _cells(k for k, v in solution.items() if abs(v - p) < EPSILON)
 
         mines = get_cells(1.)
         safe = list(get_cells(0.))
@@ -186,7 +186,7 @@ def locpref_strategy(strategy, game, safest):
 
     filtered_safest = None
     for mode in strategy:
-        filtered_safest = filter(lambda e: cell_type(e) in mode, safest)
+        filtered_safest = [e for e in safest if cell_type(e) in mode]
         if filtered_safest:
             break
     return filtered_safest or safest
@@ -250,7 +250,7 @@ def trial(new_game_str, tolerance=1e-6, first_safe=True, threaded=True, **kwargs
         terminate = (err <= tolerance)
 
         if terminate or total_games % 5 == 0:
-            print '%d/%d %d/%d %.4f+/-%.4f %d %.1f' % (total_wins, total_games, hopeless_wins, total_hopeless, p, err, est_trials, est_time_left)
+            print('%d/%d %d/%d %.4f+/-%.4f %d %.1f' % (total_wins, total_games, hopeless_wins, total_hopeless, p, err, est_trials, est_time_left))
 
         if terminate:
             return (total_games, total_wins, total_hopeless, hopeless_wins)

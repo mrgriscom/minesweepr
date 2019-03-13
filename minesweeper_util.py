@@ -27,7 +27,7 @@ class Board(object):
           xxxxx
         """
 
-        lines = [ln.strip() for ln in encoded.strip().split('\n')]
+        lines = [ln.strip() for ln in encoded.strip().split()]
         self.height = len(lines)
         self.width = len(lines[0])
 
@@ -37,7 +37,8 @@ class Board(object):
                 pos = (row + 1, col + 1)
                 self.cells[pos] = BoardCell(c, self.cell_name(*pos))
 
-    def adjacent(self, (row, col)):
+    def adjacent(self, row_col):
+        row, col = row_col
         for r in range(max(row - 1, 1), min(row + 2, self.height + 1)):
             for c in range(max(col - 1, 1), min(col + 2, self.width + 1)):
                 pos = (r, c)
@@ -100,7 +101,7 @@ def generate_rules(board, total_mines, everything_mode=False):
       * create a rule encompassing all uncovered cells
       * create a rule for all cells adjacent to 'blank'/'empty' cells, and not
         included in the previous rule. thus, this rule will only be present
-        for invalid  boards or boards whose empty areas have not been fully
+        for invalid boards or boards whose empty areas have not been fully
         expanded
     """
 
@@ -117,7 +118,7 @@ def generate_rules(board, total_mines, everything_mode=False):
     num_known_mines = 0    # total number of known mines
 
     rules = []
-    for cell_id, cell in board.cells.iteritems():
+    for cell_id, cell in board.cells.items():
         if cell.is_mine():
             num_known_mines += 1
             if everything_mode:
