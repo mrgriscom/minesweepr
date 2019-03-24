@@ -8,7 +8,6 @@ import logging
 import time
 from taskexec import exec_capped, ExecTimeOut
 import itertools
-from lib.minesweeper_util import api_solve
 
 @csrf_exempt
 def api_solve(request):
@@ -17,6 +16,7 @@ def api_solve(request):
 
     start = time.time()
     try:
+        from lib.minesweeper_util import api_solve
         result = exec_capped(api_solve, settings.CPU_QUOTA, payload)
     except ExecTimeOut:
         result = {'error': 'cpu quota exceeded'}
