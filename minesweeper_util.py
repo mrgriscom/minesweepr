@@ -1,6 +1,33 @@
 import minesweeper as mnsw
+import time
 
 # utility / debugging code
+
+def parse_api_payload(payload):
+    if 'board' in payload:
+        rules, mine_p = read_board(payload['board'], payload['total_mines'], everything_mode=True)
+    else:
+        rules = [mnsw.Rule(r['num_mines'], r['cells']) for r in payload['rules']]
+        try:
+            mine_p = payload['mine_prob']
+        except KeyError:
+            mine_p = mnsw.MineCount(payload['total_cells'], payload['total_mines'])
+
+    return rules, mine_p
+            
+def api_solve(payload):
+    rules, mine_p = parse_api_payload(payload)
+    
+    result = {}
+    start = time.time()
+    try:
+        result['solution'] = mnsw.solve(rules, mine_p, '_other')
+    except mnsw.InconsistencyError:
+        result['solution'] = None
+    end = time.time()
+    result['processing_time'] = end - start
+
+    return result
 
 def read_board(encoded_board, total_mines, everything_mode=False):
     """convert an ascii-art game board into the ruleset describing it"""
