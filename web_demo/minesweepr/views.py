@@ -26,10 +26,15 @@ def api_solve(request):
     return HttpResponse(json.dumps(result), 'text/json')
 
 def log_result(payload, result, rtt):
-    num_rules = len(payload['rules'])
-    num_uniq_cells = len(set(itertools.chain(*(r['cells'] for r in payload['rules']))))
-    avg_cells_per_rule = sum(len(r['cells']) for r in payload['rules']) / float(num_rules) if num_rules else 0.
-
+    if 'rules' in payload:
+        num_rules = len(payload['rules'])
+        num_uniq_cells = len(set(itertools.chain(*(r['cells'] for r in payload['rules']))))
+        avg_cells_per_rule = sum(len(r['cells']) for r in payload['rules']) / float(num_rules) if num_rules else 0.
+    else:
+        num_rules = -1
+        num_uniq_cells = -1
+        avg_cells_per_rule = -1
+        
     try:
         solved_in = '%.3f' % result['processing_time']
     except KeyError:

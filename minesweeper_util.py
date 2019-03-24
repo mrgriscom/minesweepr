@@ -56,7 +56,7 @@ class Board(object):
 
         lines = [ln.strip() for ln in encoded.strip().split()]
         self.height = len(lines)
-        self.width = len(lines[0])
+        self.width = len(lines[0] if lines else [])
 
         self.cells = {}
         for row, ln in enumerate(lines):
