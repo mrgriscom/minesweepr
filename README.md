@@ -1,7 +1,7 @@
 minesweepr
 ==========
 
-This project is a minesweeper solver algorithm in python, along with an interactive demo / game engine written in javascript and HTML canvas. [Try it out!](https://mrgris.com/projects/minesweepr/demo/player/)
+This project is a minesweeper solver algorithm in python 2.7, along with an interactive demo / game engine written in javascript and HTML canvas. [Try it out!](https://mrgris.com/projects/minesweepr/demo/player/)
 
 Solving
 -------
@@ -65,7 +65,7 @@ The solver will also identify game states that are inconsistent/contradictory (i
 Interactive Demo
 ----------------
 
-An interactive player is provided in `web_demo/` as a simple django project. To launch:
+An interactive player is provided in `web_demo/` as a simple django project (last vetted on rather archaic django 1.4). To launch:
 
     python manage.py runserver
 
