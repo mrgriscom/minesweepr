@@ -242,7 +242,9 @@ function GameSession(board, canvas, first_safe) {
     sol_context.refresh();
 
     var game = this;
-    var seq = this.seq;
+      var seq = this.seq;
+      //SOLVER_URL = 'https://minesweepr-cloudfunc.mrgris.com/solve';
+      SOLVER_URL = 'https://us-central1-minesweepr.cloudfunctions.net/solve';
     solve_query(this.board, SOLVER_URL, function (solution, proc_time) {
         sol_context.update(solution, proc_time);
         // make sure the game state this solution is for is still the current one
@@ -513,17 +515,28 @@ function GameSession(board, canvas, first_safe) {
 
 function solve_query(board, url, callback, get_state) {
   get_state = get_state || function(board) { return board.game_state(); };
-  $.post(url, JSON.stringify(get_state(board)), function (data) {
+  $.ajax({
+    type: "POST",
+    crossOrigin: true,
+    url: url,
+    data: JSON.stringify(get_state(board)),
+    dataType: 'json',
+    success: function (data) {
       if (data.error) {
+        // no longer used?
         callback(null, null);
       } else {
         if (data.solution == null) {
           alert('game state detected as inconsistent!');
         }
-
         callback(new Solution(data.solution), data.processing_time);
       }
-    }, "json");
+    },
+      error: function(a,b,c) {
+	  debugger;
+      callback(null, null);
+    }
+  });
 }
 
 function Solution(probs) {
