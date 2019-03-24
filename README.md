@@ -1,9 +1,9 @@
 minesweepr
 ==========
 
-This project is a minesweeper solver algorithm in python, along with an interactive demo / game engine written in javascript and HTML canvas. [Try it out!](http://mrgris.com/projects/minesweepr/demo/player/)
+This project is a minesweeper solver algorithm in python, along with an interactive demo / game engine written in javascript and HTML canvas. [Try it out!](https://mrgris.com/projects/minesweepr/demo/player/)
 
-solving
+Solving
 -------
 
 To solve a board, you provide a number of 'rules' describing the game state, along with information about the board as a whole: total number of cells and total number of mines.
@@ -62,7 +62,7 @@ You can see that the specific logic for generating the appropriate arguments to 
 
 The solver will also identify game states that are inconsistent/contradictory (i.e., have no possible solution) and raise an exception.
 
-interactive demo
+Interactive Demo
 ----------------
 
 An interactive player is provided in `web_demo/` as a simple django project. To launch:

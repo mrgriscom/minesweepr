@@ -1,6 +1,33 @@
 import minesweeper as mnsw
+import time
 
 # utility / debugging code
+
+def parse_api_payload(payload):
+    if 'board' in payload:
+        rules, mine_p = read_board(payload['board'], payload['total_mines'], everything_mode=True)
+    else:
+        rules = [mnsw.Rule(r['num_mines'], r['cells']) for r in payload['rules']]
+        try:
+            mine_p = payload['mine_prob']
+        except KeyError:
+            mine_p = mnsw.MineCount(payload['total_cells'], payload['total_mines'])
+
+    return rules, mine_p
+            
+def api_solve(payload):
+    rules, mine_p = parse_api_payload(payload)
+    
+    result = {}
+    start = time.time()
+    try:
+        result['solution'] = mnsw.solve(rules, mine_p, '_other')
+    except mnsw.InconsistencyError:
+        result['solution'] = None
+    end = time.time()
+    result['processing_time'] = end - start
+
+    return result
 
 def read_board(encoded_board, total_mines, everything_mode=False):
     """convert an ascii-art game board into the ruleset describing it"""
@@ -27,7 +54,7 @@ class Board(object):
           xxxxx
         """
 
-        lines = [ln.strip() for ln in encoded.strip().split('\n')]
+        lines = [ln.strip() for ln in encoded.strip().split()]
         self.height = len(lines)
         self.width = len(lines[0])
 
@@ -100,7 +127,7 @@ def generate_rules(board, total_mines, everything_mode=False):
       * create a rule encompassing all uncovered cells
       * create a rule for all cells adjacent to 'blank'/'empty' cells, and not
         included in the previous rule. thus, this rule will only be present
-        for invalid  boards or boards whose empty areas have not been fully
+        for invalid boards or boards whose empty areas have not been fully
         expanded
     """
 

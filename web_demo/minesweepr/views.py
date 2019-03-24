@@ -6,9 +6,9 @@ from django.conf import settings
 import json
 import logging
 import time
-from tasks import minesweeper_solve
 from taskexec import exec_capped, ExecTimeOut
 import itertools
+from lib.minesweeper_util import api_solve
 
 @csrf_exempt
 def api_solve(request):
@@ -17,7 +17,7 @@ def api_solve(request):
 
     start = time.time()
     try:
-        result = exec_capped(minesweeper_solve, settings.CPU_QUOTA, payload)
+        result = exec_capped(api_solve, settings.CPU_QUOTA, payload)
     except ExecTimeOut:
         result = {'error': 'cpu quota exceeded'}
     log_result(payload, result, time.time() - start)
