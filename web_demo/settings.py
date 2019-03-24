@@ -109,6 +109,7 @@ BASE_STATIC_URL = ''
 STATIC_URL = '/static/'
 STATIC_ROOT = None
 
+# set to 'None' to bypass process pool for debugging
 CPU_QUOTA = 5. #s
 
 try:

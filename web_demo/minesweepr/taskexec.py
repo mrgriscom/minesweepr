@@ -10,6 +10,10 @@ class ExecTimeOut(Exception):
 
 def exec_capped(task, time_limit, *args, **kwargs):
     """execute a task, but cap execution time at 'time_limit'"""
+    if time_limit is None:
+        # run inline for debugging purposes
+        return task(*args, **kwargs)
+    
     _task = executor(task, *args, **kwargs)
     _task.start()
     _task.join(time_limit)
