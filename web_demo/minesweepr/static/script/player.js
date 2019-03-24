@@ -1,5 +1,6 @@
 
 $(document).ready(function() {
+    warm_api();
     init_legend();
 
     init_canvas();
@@ -524,6 +525,14 @@ function solve_query(board, url, callback, get_state) {
         callback(new Solution(data.solution), data.processing_time);
       }
     }, "json");
+}
+
+// make a call to solve a degenerate board to avoid cold starts with any
+// cloud function providers
+function warm_api() {
+    solve_query(null, SOLVER_URL, function(){}, function(b) {
+	return {rules: [], total_cells: 0, total_mines:0}
+    });
 }
 
 function Solution(probs) {
