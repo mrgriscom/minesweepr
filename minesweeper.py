@@ -1,6 +1,7 @@
 import collections
 import itertools
 import operator
+import queue
 from util import *
 
 set_ = frozenset
@@ -217,6 +218,9 @@ class Reduceable(ImmutableMixin):
     def contains(self, rule):
         return rule in (self.superrule, self.subrule)
 
+    def contained_within(self, rules):
+        return all(r in rules for r in (self.superrule, self.subrule))
+    
     def _canonical(self):
         return (self.superrule, self.subrule)
 
@@ -229,7 +233,7 @@ class CellRulesMap(object):
     def __init__(self, rules=[]):
         # a mapping: cell -> list of rules cell appears in
         self.map = collections.defaultdict(set)
-        self.rules = []
+        self.rules = set()
         self.add_rules(rules)
 
     def add_rules(self, rules):
@@ -237,7 +241,7 @@ class CellRulesMap(object):
             self.add_rule(rule)
 
     def add_rule(self, rule):
-        self.rules.append(rule)
+        self.rules.add(rule)
         for cell_ in rule.cells_:
             self.map[cell_].add(rule)
 
@@ -295,8 +299,8 @@ class RuleReducer(object):
         # reverse lookup for rules containing a given cell
         self.cell_rules_map = CellRulesMap()
         # current list of all possible reductions
-        self.candidate_reductions = set() #todo: make this a priority queue
-
+        self.candidate_reductions = queue.PriorityQueue()
+        
     def add_rules(self, rules):
         """add a set of rules to the ruleset"""
         for rule in rules:
@@ -313,29 +317,37 @@ class RuleReducer(object):
         self.cell_rules_map.add_rule(rule)
         self.update_reduceables(rule)
 
+    def add_reduceable(self, reduc):
+        # priority queue priorities are lowest first
+        prio = tuple(-k for k in reduc.metric())
+        self.candidate_reductions.put((prio, reduc))
+        
     def update_reduceables(self, rule):
         """update the index of which rules are reduceable from others"""
         rules_ov = self.cell_rules_map.overlapping_rules(rule)
         for rule_ov in rules_ov:
             if rule_ov.is_subrule_of(rule):
                 # catches if rules are equivalent
-                self.candidate_reductions.add(Reduceable(rule, rule_ov))
+                self.add_reduceable(Reduceable(rule, rule_ov))
             elif rule.is_subrule_of(rule_ov):
-                self.candidate_reductions.add(Reduceable(rule_ov, rule))
+                self.add_reduceable(Reduceable(rule_ov, rule))
 
     def remove_rule(self, rule):
         """remove a rule from the active ruleset/index, presumably because it
         was reduced"""
         self.active_rules.remove(rule)
         self.cell_rules_map.remove_rule(rule)
-        # todo: make this more efficient with an index of rule -> reduceables
-        self.candidate_reductions = set(reduc for reduc in self.candidate_reductions if not reduc.contains(rule))
+        # we can't remove the inner contents of candidate_reductions queue; items
+        # are checked for validity when they're popped
 
     def pop_best_reduction(self):
         """get the highest-value reduction to perform next"""
-        reduction = max(self.candidate_reductions, key=lambda reduc: reduc.metric())
-        self.candidate_reductions.remove(reduction)
-        return reduction
+        while not self.candidate_reductions.empty():
+            reduction = self.candidate_reductions.get()[1]
+            if not reduction.contained_within(self.active_rules):
+                continue
+            return reduction
+        return None
 
     def reduce(self, reduction):
         """perform a reduction"""
@@ -345,9 +357,11 @@ class RuleReducer(object):
 
     def reduce_all(self):
         """run the manager"""
-        while self.candidate_reductions:
-            self.reduce(self.pop_best_reduction())
-
+        while True:
+            reduction = self.pop_best_reduction()
+            if not reduction:
+                break
+            self.reduce(reduction)
         return self.active_rules
 
 class Permutation(ImmutableMixin):
