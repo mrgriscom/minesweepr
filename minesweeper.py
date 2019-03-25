@@ -868,6 +868,7 @@ class FrontTally(object):
         total = sum(subtally.total for subtally in self.subtallies.values())
         for subtally in self.subtallies.values():
             subtally.total /= float(total)
+            subtally.normalized = True
             
     def collapse(self):
         """calculate the per-cell expected mine values, summed/weighted across
@@ -891,7 +892,7 @@ class FrontTally(object):
         weights -- mapping: num_mines -> new weight of the sub-tally for 'num_mines'
         """
         for num_mines, subtally in self:
-            subtally.total = weights[num_mines]
+            subtally.total = weights.get(num_mines, 0.)
 
     @staticmethod
     def from_rule(rule):
@@ -927,6 +928,9 @@ class FrontSubtally(object):
         #                    -> expected # of mines in cell (post-finalize)
         self.tally = collections.defaultdict(lambda: 0)
 
+        self.finalized = False
+        self.normalized = False
+
     def add(self, config):
         """add a configuration to the tally"""
         mult = config.multiplicity() # weight by multiplicity
@@ -938,6 +942,7 @@ class FrontSubtally(object):
         """after all configurations have been summed, compute relative
         prevalence from totals"""
         self.tally = dict((cell_, n / float(self.total)) for cell_, n in self.tally.iteritems())
+        self.finalized = True
 
     def collapse(self):
         """helper function for FrontTally.collapse(); emit all cell expected
@@ -953,6 +958,7 @@ class FrontSubtally(object):
         o = FrontSubtally()
         o.total = total
         o.tally = tally
+        o.finalized = True
         return o
 
     def __repr__(self):
@@ -1071,14 +1077,136 @@ def combine_fronts(tallies, num_uncharted_cells, at_large_mines):
     def new_front_total():
         return collections.defaultdict(lambda: 0)
 
+    min_tallied_mines, max_tallied_mines = possible_mine_limits(tallies)
+    min_other_mines = max(at_large_mines - max_tallied_mines, 0)
+    max_other_mines = min(max(at_large_mines - min_tallied_mines, 0), num_uncharted_cells) # TODO is max 0 necessary here? indicates not enough mines to go around
+    def relative_likelihood(num_free_mines):
+        return discrete_relative_likelihood(num_uncharted_cells, num_free_mines, max_other_mines)
+
+    class FrontPerMineTotals(object):
+        def __init__(self, totals):
+            self.totals = totals
+
+        @staticmethod
+        def singleton(num_mines, total):
+            return FrontPerMineTotals({num_mines: total})
+
+        @property
+        def total_count(self):
+            return sum(self.totals.values())
+        
+        def multiply(self, n):
+            return FrontPerMineTotals(dict((num_mines, n * count) for num_mines, count in self))
+
+        @staticmethod
+        def sum(front_totals):
+            return FrontPerMineTotals(map_reduce(front_totals, lambda ft: ft, sum))
+
+        def __iter__(self):
+            return self.totals.iteritems()
+        
+        def __repr__(self):
+            return str(self.totals)
+        
+    class AllFrontsPerMineTotals(object):
+        def __init__(self, front_totals):
+            self.front_totals = front_totals
+
+        @property
+        def total_count(self):
+            return self.front_totals[0].total_count if self.front_totals else 1
+        
+        @staticmethod
+        def null():
+            return AllFrontsPerMineTotals([])
+        
+        @staticmethod
+        def singleton(num_mines, total):
+            return AllFrontsPerMineTotals([FrontPerMineTotals.singleton(num_mines, total)])
+        
+        def join_with(self, other):
+            return AllFrontsPerMineTotals([f.multiply(other.total_count) for f in self.front_totals] +
+                                          [f.multiply(self.total_count) for f in other.front_totals])
+
+        @staticmethod
+        def sum(frontsets):
+            return AllFrontsPerMineTotals(map(FrontPerMineTotals.sum, zip(*frontsets)))
+
+        def __iter__(self):
+            return iter(self.front_totals)
+        
+        def __repr__(self):
+            return str((self.total_count, self.front_totals))
+                    
+    class CombinedFront(object):
+        def __init__(self, total_mines_to_front_totals, min_mines, max_mines):
+            self.totals = total_mines_to_front_totals
+            self.min_mines = min_mines
+            self.max_mines = max_mines
+
+        @staticmethod
+        def null():
+            return CombinedFront({0: AllFrontsPerMineTotals.null()}, 0, 0)
+
+        @staticmethod
+        def from_iter(seq, to_mines_and_count):
+            mines_with_counts = map(to_mines_and_count, seq)
+            min_mines, max_mines = (f(e[0] for e in mines_with_counts) for f in (min, max))
+            return CombinedFront(dict((num_mines, AllFrontsPerMineTotals.singleton(num_mines, total)) for num_mines, total in mines_with_counts),
+                                 min_mines, max_mines)
+        
+        @staticmethod
+        def from_tally(tally):
+            return CombinedFront.from_iter(tally, lambda (num_mines, subtally): (num_mines, subtally.total))
+
+        @staticmethod
+        def for_other(mmin, mmax):
+            return CombinedFront.from_iter(xrange(mmin, mmax+1), lambda m: (m, relative_likelihood(m)))
+        
+        def join_with(self, other, total_min_mines, total_max_mines):
+            new_min_mines = self.min_mines + other.min_mines
+            new_max_mines = self.max_mines + other.max_mines
+            remaining_min_mines = total_min_mines - new_min_mines
+            remaining_max_mines = total_max_mines - new_max_mines
+            
+            def cross_entry(((a_num_mines, a_fronts), (b_num_mines, b_fronts))):
+                combined_mines = a_num_mines + b_num_mines
+                min_mines_at_end = combined_mines + remaining_min_mines
+                max_mines_at_end = combined_mines + remaining_max_mines
+                if min_mines_at_end > at_large_mines or max_mines_at_end < at_large_mines:
+                    return None
+                return (combined_mines, a_fronts.join_with(b_fronts))
+            cross_entries = filter(None, map(cross_entry, itertools.product(self, other)))
+            new_totals = map_reduce(cross_entries, lambda kv: [kv], AllFrontsPerMineTotals.sum)
+            return CombinedFront(new_totals, new_min_mines, new_max_mines)
+
+        def __iter__(self):
+            return self.totals.iteritems()
+        
+        def __repr__(self):
+            return str(self.totals)
+
+    tallies = list(tallies) # we need guaranteed iteration order
+
+    cfs = map(CombinedFront.from_tally, tallies) + [CombinedFront.for_other(min_other_mines, max_other_mines)]
+    min_mines_all_fronts = sum(cf.min_mines for cf in cfs)
+    max_mines_all_fronts = sum(cf.max_mines for cf in cfs)
+    xxx = reduce(lambda a, b: a.join_with(b, min_mines_all_fronts, max_mines_all_fronts), cfs)
+    from pprint import pprint
+    pprint(xxx)
+        
+    # actually apply weights
+    # inconsistency error for other front mine limits? verify still occurs
+    # test speedup with autoplayer
+        
     # list of FrontTotals, corresponding to each tally in order
     grand_totals = [new_front_total() for tally in tallies]
     # FrontTotal corresponding to the 'other' cells
     uncharted_total = new_front_total()
 
-    tallies = list(tallies) # we need guaranteed iteration order
     # iterate over the cartesian product of sub-tallies from each tally
     for combination in (combo(e) for e in itertools.product(*tallies)):
+        #print combination
         num_tallied_mines = sum(s.num_mines for s in combination)
         # number of mines lying in the 'other' cells
         num_free_mines = at_large_mines - num_tallied_mines
@@ -1097,6 +1225,16 @@ def combine_fronts(tallies, num_uncharted_cells, at_large_mines):
             front_total[subtally.num_mines] += k
         uncharted_total[num_free_mines] += k
 
+    vold = [dict((k, v) for k, v in d.iteritems() if v > 0) for d in (grand_totals + [uncharted_total])]
+    vnew = [ft.totals for ft in xxx.totals.values()[0].front_totals]
+    def cmpfront(a, b):
+        return a.keys() == b.keys() and all(abs(a[k] / b[k] - 1) < 1e-9 for k in a.keys())
+    assert len(vold) == len(vnew) and all(cmpfront(a, b) for a, b in zip(vold, vnew)), (vold, vnew)
+
+
+    grand_totals = [e.totals for e in xxx.totals.values()[0].front_totals[:-1]]
+    uncharted_total = xxx.totals.values()[0].front_totals[-1].totals
+    
     # upate tallies with adjusted weights
     for tally, front_total in zip(tallies, grand_totals):
         tally.update_weights(front_total)
