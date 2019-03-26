@@ -56,7 +56,7 @@ So we see that cells `B`, `C`, and `D` are mines; `A`, `E`, and `G` are clear; `
 
 One point of confusion is that `total_cells` in the above example is 85 instead of 100. This is because there are 15 uncovered cells that we did not include in any rule. Since the solver doesn't know anything about a 10x10 grid, we subtract these 15 from the total number of cells and the solver never needs to know they even exist. Alternatively, we could add a rule: `Rule(0, [set of all uncovered cells])` and set `total_cells` to 100, and the outcome would be the same. We could even naively make a separate `Rule` for every single uncovered cell, but that is cumbersome and inefficient.
 
-In general, `total_cells` must equal the count of all uncovered cells plus all cells mentioned in a `Rule`. `total_mines` must equal the total number of mines minus any mines already identified and _not_ mentioned in any `Rule`.
+In general, `total_cells` must equal the count of all still-covered cells plus all cells mentioned in a `Rule`. `total_mines` must equal the total number of mines minus any mines already identified and _not_ mentioned in any `Rule`.
 
 You can see that the specific logic for generating the appropriate arguments to `solve()` is quite nuanced (assuming you're not taking the naive route). Luckily, utility code is provided that can do the processing for you. See `minesweeper_util.generate_rules()`. You can directly use the ascii-art format from above via `minesweeper_util.read_board()` (without the explicit tagging `A`, `B`, `C`, though; that was just for illustrative purposes).
 
