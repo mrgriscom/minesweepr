@@ -1,7 +1,7 @@
 import collections
 import itertools
 import operator
-import queue
+import Queue
 from util import *
 
 set_ = frozenset
@@ -299,7 +299,7 @@ class RuleReducer(object):
         # reverse lookup for rules containing a given cell
         self.cell_rules_map = CellRulesMap()
         # current list of all possible reductions
-        self.candidate_reductions = queue.PriorityQueue()
+        self.candidate_reductions = Queue.PriorityQueue()
         
     def add_rules(self, rules):
         """add a set of rules to the ruleset"""
