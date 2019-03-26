@@ -1059,6 +1059,7 @@ def combine_fronts(tallies, num_uncharted_cells, at_large_mines):
 
     min_tallied_mines, max_tallied_mines = possible_mine_limits(tallies)
     min_other_mines = max(at_large_mines - max_tallied_mines, 0)
+    # technically, min_tallied_mines known to be <= at_large_mines due to check_count_consistency()
     max_other_mines = min(max(at_large_mines - min_tallied_mines, 0), num_uncharted_cells)
     def relative_likelihood(num_free_mines):
         return discrete_relative_likelihood(num_uncharted_cells, num_free_mines, max_other_mines)
