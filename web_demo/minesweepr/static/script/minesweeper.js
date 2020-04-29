@@ -96,26 +96,42 @@ function Board (topology) {
     }
   }
 
-  var cascade_overrides_flag = false;
+  var cascade_overrides_flagged = false;
   //uncover a cell, triggering any cascades
   //return whether we survived, null if operation not applicable
-  this.uncover = function (pos, cascade_override) {
-    var cell = this.get_cell(pos);
-    if (!cell.visible && (!cell.flagged || cascade_override)) {
-      cell.visible = true;
-      cell.flagged = false;
-
-      if (cell.state == 'mine') {
-        return false;
-      } else {
-        if (cell.state == 0) {
-          this.for_each_neighbor(pos, function (pos, neighb, board) {
-              board.uncover(pos, cascade_overrides_flag);
+  this.uncover = function (pos) {
+    // can't do straight up recursion for cascades since very large boards might
+    // exceed call stack limit
+    
+    var board = this;
+    var cascades = [];
+    // original top-level function
+    var _uncover = function (pos, is_cascade) {
+      var cell = board.get_cell(pos);
+      if (!cell.visible && (!cell.flagged || (is_cascade && cascade_overrides_flagged))) {
+        cell.visible = true;
+        cell.flagged = false;
+        
+        if (cell.state == 'mine') {
+          return false;
+        } else {
+          if (cell.state == 0) {
+            board.for_each_neighbor(pos, function (pos, neighb, board) {
+              // would recurse here, but add to queue instead
+              cascades.push(pos);
             });
+          }
+          return true;
         }
-        return true;
       }
+    };
+    // invoke top level and cache result
+    var result = _uncover(pos, false);
+    // process the cascading cells -- note: 'cascades' may increase in length with further calls to _uncover()
+    for (var i = 0; i < cascades.length; i++) {
+      _uncover(cascades[i], true);
     }
+    return result;
   }
 
   //uncover all neighbors of a cell, provided the indicated number of neighboring mines
