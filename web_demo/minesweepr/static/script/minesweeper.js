@@ -34,6 +34,7 @@ function prob_shade (p, best) {
 function Board (topology) {
   this.topology = topology;
   this.cells = [];
+  this.cells_by_name = {};
 
   this.populate_n = function (num_mines) {
     this.num_mines = num_mines;
@@ -50,7 +51,9 @@ function Board (topology) {
       this.cells.push(new Cell(null, mine_dist[i] ? 'mine' : null, false, false));
     }
     this.for_each_cell(function (pos, cell, board) {
+        cell.pos = pos;      
         cell.name = board.topology.cell_name(pos);
+        board.cells_by_name[cell.name] = cell;
       });
     this.for_each_cell(function (pos, cell, board) {
         board.init_cell_state(pos, cell);
@@ -269,15 +272,10 @@ function Board (topology) {
   }
 
   this.for_each_name = function (names, func) {
-    var nameIx = {};
+    var board = this;
     $.each(names, function(i, name) {
-        nameIx[name] = true;
-      });
-
-    this.for_each_cell(function (pos, cell, board) {
-        if (nameIx[cell.name]) {
-          func(pos, cell, board);
-        }
+        var cell = board.cells_by_name[name];
+        func(cell.pos, cell, board);    
       });
   }
 
@@ -424,6 +422,7 @@ function Board (topology) {
 
 function Cell (name, state, visible, flagged) {
   this.name = name;
+  this.pos = null;	
   this.state = state;
   this.visible = visible;
   this.flagged = flagged;

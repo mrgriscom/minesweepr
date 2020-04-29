@@ -324,10 +324,8 @@ function GameSession(board, canvas, first_safe) {
           game.board.uncover(game.board.safe_cell());
           action = true;
         } else if (solu) {
-          var guess = null;
-          if (solu.best_guesses.length) {
-            var guess = choose_rand(solu.best_guesses);
-          }
+          var guesses = Object.keys(solu.best_guesses);	
+          var guess = guesses.length > 0 ? choose_rand(guesses) : null;
 
           solu.each(game.board, function (pos, cell, prob, board) {
               if (prob < EPSILON) {
@@ -534,8 +532,8 @@ function warm_api() {
 
 function Solution(probs) {
   this.cell_probs = probs;
-  this.best_guesses = null;
-  this.other_cells = null;
+  this.best_guesses = {};
+  this.other_cells = {};
 
   this.process = function(board) {
     this.enumerate_other(board);
@@ -552,12 +550,11 @@ function Solution(probs) {
         }
       });
 
-    this.best_guesses = [];
     if (must_guess) {
       var solu = this;
       $.each(guesses, function(i, guess) {
           if (guess.p < min_prob + EPSILON) {
-            solu.best_guesses.push(guess.name);
+            solu.best_guesses[guess.name] = true;
           }
         });
     }
@@ -572,11 +569,13 @@ function Solution(probs) {
     
     var names = [];
     for (var name in this.cell_probs) {
-      names.push(name);
+      if (name != '_other') {    
+        names.push(name);
+      }
     }
     var solu = this;
     _apply(names, function(name) { return solu.cell_probs[name]; });
-    _apply(this.other_cells, function(name) { return solu.other_prob(); });
+    _apply(Object.keys(this.other_cells), function(name) { return solu.other_prob(); });
   }
 
   this.render = function(canvas, board) {
@@ -585,7 +584,7 @@ function Solution(probs) {
         // still render overlay for cells erroneously flagged, or cells correctly flagged
         // but we shouldn't know that yet (p != 1.)
         if (!(cell.flagged && cell.state == 'mine') || prob < 1.) {
-          board.render_overlay(pos, canvas, prob_shade(prob, solu.best_guesses.indexOf(cell.name) != -1), cell.flagged && prob < 1.);
+          board.render_overlay(pos, canvas, prob_shade(prob, solu.best_guesses[cell.name] != null), cell.flagged && prob < 1.);
         }
       });
   }
@@ -594,7 +593,7 @@ function Solution(probs) {
     var prob = null;
     var cell = board.get_cell(pos);
     prob = this.cell_probs[cell.name];
-    if (prob == null && this.other_cells.indexOf(cell.name) != -1) {
+    if (prob == null && this.other_cells[cell.name] != null) {
       prob = this.other_prob();
     }
     return prob;
@@ -605,14 +604,12 @@ function Solution(probs) {
   }
 
   this.enumerate_other = function(board) {
-    this.other_cells = [];
-
     var other_prob = this.other_prob();
     if (other_prob != null) {
       var solu = this;
       board.for_each_cell(function (pos, cell, board) {
           if (!cell.visible && solu.cell_probs[cell.name] == null) {
-            solu.other_cells.push(cell.name);
+            solu.other_cells[cell.name] = true;
           }
         });
     }
