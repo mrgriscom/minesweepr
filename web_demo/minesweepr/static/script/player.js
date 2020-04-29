@@ -117,21 +117,18 @@ function topoChanged(e) {
 }
 
 function parsemine(raw, surface_area) {
+  var mode = 'count';
+  var k;
   if (raw[raw.length - 1] == '%') {
-    var mode = 'prob';
     raw = raw.substring(0, raw.length - 1);
-  } else {
-    var mode = 'count';
-  }
-
-  var k = +raw;
-
-  if (mode == 'prob') {
-    k *= 0.01;
-  } else if (mode == 'count' && k < 1.) {
+    k = raw * 0.01;
     k = Math.round(surface_area * k);
+  } else {
+    k = +raw;
+    if (k > 0. && k < 1.) {
+      mode = 'prob';
+    }
   }
-
   return {mode: mode, k: k};
 }
 
@@ -530,9 +527,9 @@ function solve_query(board, url, callback, get_state) {
 // make a call to solve a degenerate board to avoid cold starts with any
 // cloud function providers
 function warm_api() {
-    solve_query(null, SOLVER_URL, function(){}, function(b) {
-	return {rules: [], total_cells: 0, total_mines:0}
-    });
+  solve_query(null, SOLVER_URL, function(){}, function(b) {
+    return {rules: [], total_cells: 0, total_mines:0}
+  });
 }
 
 function Solution(probs) {
