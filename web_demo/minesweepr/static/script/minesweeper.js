@@ -288,23 +288,18 @@ function Board (topology) {
     // are flagged incorrectly
 
     var rules = [];
-    var clear_cells = [];
-    var zero_cells = [];
-    var relevant_mines = [];
+    var clear_cells = {};
+    var zero_cells = {};
+    var relevant_mines = {};
     var num_known_mines = 0;
 
-    var mk_rule = function(num_mines, cells) {
-      var rule = {num_mines: num_mines, cells: []};
-      for (var i = 0; i < cells.length; i++) {
-        rule.cells.push(cells[i].name);
-      }
-      return rule;
+    // ensure cell_names is not modified later!
+    var mk_rule = function(num_mines, cell_names) {
+      return {num_mines: num_mines, cells: cell_names};
     }
 
-    var add = function(set, elem) {
-      if (set.indexOf(elem) == -1) {
-        set.push(elem);
-      }
+    var add_cell = function(set, cell) {
+      set[cell.name] = cell;
     }
 
     var is_mine = (function() {
@@ -319,17 +314,17 @@ function Board (topology) {
         if (is_mine(cell)) {
           num_known_mines += 1;
           if (everything_mode || known_mines) {
-            add(relevant_mines, cell);
+            add_cell(relevant_mines, cell);
           }
         } else if (cell.visible) {
-          add(clear_cells, cell);
+          add_cell(clear_cells, cell);
 
-          var cells_of_interest = [];
+          var cellnames_of_interest = [];
           var mines_of_interest = [];
           var on_frontier = false;
           board.for_each_neighbor(pos, function (pos, neighbor, board) {
               if (!neighbor.visible) { //includes flagged mines
-                cells_of_interest.push(neighbor);
+                cellnames_of_interest.push(neighbor.name);
                 if (is_mine(neighbor)) {
                   mines_of_interest.push(neighbor);
                 } else {
@@ -339,34 +334,35 @@ function Board (topology) {
             });
 
           if (on_frontier || (everything_mode && cell.state > 0)) {
-            rules.push(mk_rule(cell.state, cells_of_interest));
+            rules.push(mk_rule(cell.state, cellnames_of_interest));
             $.each(mines_of_interest, function(i, mine) {
-                add(relevant_mines, mine);
+                add_cell(relevant_mines, mine);
               });
           }
           if (cell.state == 0) {
             board.for_each_neighbor(pos, function (pos, neighbor, board) {
-                add(zero_cells, neighbor);
+                add_cell(zero_cells, neighbor);
               });
           }
         }
       });
 
-    for (var i = 0; i < relevant_mines.length; i++) {
-      rules.push(mk_rule(1, [relevant_mines[i]]));
-    }
+    $.each(relevant_mines, function(name, _) {
+      rules.push(mk_rule(1, [name]));
+    });
     if (everything_mode) {
-      rules.push(mk_rule(0, clear_cells));
-      rules.push(mk_rule(0, zero_cells));
+      rules.push(mk_rule(0, Object.keys(clear_cells)));
+      rules.push(mk_rule(0, Object.keys(zero_cells)));
     }
 
-    var num_irrelevant_mines = num_known_mines - relevant_mines.length;
-    var state = {rules: rules, total_cells: this.num_cells() - (everything_mode ? 0 : clear_cells.length + num_irrelevant_mines)};
+    var num_irrelevant_mines = num_known_mines - Object.keys(relevant_mines).length;
+    var state = {rules: rules, total_cells: this.num_cells() - (everything_mode ? 0 : Object.keys(clear_cells).length + num_irrelevant_mines)};
     if (this.num_mines != null) {
       state.total_mines = this.num_mines - (everything_mode ? 0 : num_irrelevant_mines);
     } else {
       state.mine_prob = this.mine_prob;
     }
+	  
     return state;
   }
 
