@@ -47,6 +47,10 @@ $(document).ready(function() {
         $('#step')[enabled ? 'removeClass' : 'addClass']('disabled');
       });
 
+	$('#swapmineformat').click(function(e) {
+		$('#mines').val(swapmineformat());
+	});
+	
     UI_CANVAS.mousemove(hover_overlays);
     UI_CANVAS.mouseout(function(e) {
         hover_overlays(null);
@@ -66,7 +70,7 @@ $(document).ready(function() {
   });
 
 function set_defaults() {
-  cached_dimensions = {_2d: [30, 16, null, 100], _3d: [6, 10, 8, 80]};
+  cached_dimensions = {_2d: [30, 16, null, 99], _3d: [6, 10, 8, 80]};
   active_dimension = null;
 
   selectChoice($('input[name="topo"][value="grid"]'));
@@ -132,14 +136,32 @@ function parsemine(raw, surface_area) {
   return {mode: mode, k: k};
 }
 
-function new_game() {
-  var topo_type = $('input[name="topo"]:checked').val();
-  var width = +$('#width').val();
-  var height = +$('#height').val();
-  var depth = +$('#depth').val();
-  var first_safe = get_setting('first_safe');
+function swapmineformat() {
+	var raw = $('#mines').val();
+	var topo = get_topo();
+	
+	if (raw[raw.length - 1] == '%') {
+		raw = raw.substring(0, raw.length - 1);
+		var k = raw * 0.01;
+		return Math.round(topo.num_cells() * k);
+	} else {
+		var k = +raw;
+		k = 100. * k / topo.num_cells();
+		return +(k.toFixed(3)) + '%';
+	}
+}
 
-  var topo = new_topo(topo_type, width, height, depth);
+function get_topo() {
+	var topo_type = $('input[name="topo"]:checked').val();
+	var width = +$('#width').val();
+	var height = +$('#height').val();
+	var depth = +$('#depth').val();
+	return new_topo(topo_type, width, height, depth);
+}
+
+function new_game() {
+  var first_safe = get_setting('first_safe');
+  var topo = get_topo();
   var minespec = parsemine($('#mines').val(), topo.num_cells());
   var board = new_board(topo, minespec);
   GAME = new GameSession(board, $('#game_canvas')[0], first_safe);
