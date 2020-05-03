@@ -33,10 +33,11 @@ $(document).ready(function() {
       });
 
     $('#show_mines').click(function(e) {
-        GAME.refresh();
+        GAME.refresh_board();
+		GAME.refresh_solution();
       });
     $('#show_sol').click(function(e) {
-        GAME.refresh();
+        GAME.refresh_solution();
       });
     $('#show_sol').change(function(e) {
         $('#legend')[$(e.target).attr('checked') ? 'show' : 'hide']();
@@ -58,6 +59,7 @@ $(document).ready(function() {
     hover_overlays(null);
     $('#win').hide();
     $('#fail').hide();
+    $('#inconsistent').hide();
     set_spinner(null);
 
     shortcut.add('enter', function() { GAME.best_move(); });
@@ -71,6 +73,7 @@ $(document).ready(function() {
 		})(i), {disable_in_input: true});
 	}
 	shortcut.add(' ', function() { GAME.set_cell_state(0); }, {disable_in_input: true});
+	shortcut.add('f', function() { GAME.set_cell_state('flag'); }, {disable_in_input: true});
 	// FIXME
 	shortcut.add('shift+/', function() { GAME.set_cell_state(null); }, {type: 'keypress', disable_in_input: true});
 	shortcut.add('delete', function() { GAME.set_cell_state(null); }, {disable_in_input: true});
@@ -93,7 +96,7 @@ function set_defaults() {
   active_dimension = null;
 
   selectChoice($('input[name="topo"][value="grid"]'));
-  selectChoice($('#first_safe'));
+	selectChoice($('#first_safe'), false);
   selectChoice($('#play_auto'));
   selectChoice($('#play_manual'));
   selectChoice($('#show_mines'), false);
@@ -255,21 +258,23 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 
 	this.set_cell_state = function(num_mines) {
 		var cell = this.board.get_cell(this.edit_cursor);
-		if (num_mines == null) {
-			console.log('sup');
+
+		cell.flagged = (num_mines == 'flag');
+		if (num_mines == null || num_mines == 'flag') {
 			cell.visible = false;
 		} else {
 			cell.visible = true;
 			cell.state = num_mines;
 		}
+		
 		this.solve();
-		this.refresh();
+		this.refresh_board();
 	}
 
 	this.incr_cell_state = function(up) {
 		console.log('incr', up);
 		this.solve();
-		this.refresh();
+		this.refresh_board();
 	}
 	
   this.start = function() {
@@ -293,15 +298,20 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     } else {
       this.solve();
     }
-    this.refresh();
+    this.refresh_board();
 
     push_state();
   }
 
-  this.refresh = function() {
+  this.refresh_board = function() {
     this.update_info();
-    this.render();
+    this.render_board();
+  }
+
+  this.refresh_solution = function() {
+    this.render_solution();
     TOOLTIP_UPDATE();
+	  $('#inconsistent')[this.show_solution() && this.display_solution.inconsistent ? 'show' : 'hide']();
   }
 
   this.solve = function() {
@@ -315,10 +325,10 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
         // make sure the game state this solution is for is still the current one
         if (GAME == game && seq == game.seq) {
           game.set_solution(sol_context);
-          game.refresh();
+          game.refresh_solution();
         }
       }, function(board) {
-          return board.game_state(null, true);
+          return board.game_state([], true);
       });
   }
 
@@ -341,23 +351,24 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     sc.refresh();
   }
 
-  this.render = function() {
-    var params = {
-		show_mines: this.show_mines() && !this.first_safety(),
-    };
+	this.render_board = function() {
+		var params = {
+			show_mines: this.show_mines() && !this.first_safety(),
+		};
+		this.board.render(this.canvas, params);
+	}
 
-    this.board.render(this.canvas, params);
-    if (this.show_solution()) {
-      this.display_solution.render(this.solution_canvas, this.board);
-    }
-  }
+	this.render_solution = function() {
+		if (this.show_solution()) {
+			this.display_solution.render(this.solution_canvas, this.board);
+		} else {
+			reset_canvas(this.solution_canvas);
+		}
+	}
 
-	this.render_cursor = function(canvas) {
-		var canvas = this.cursor_canvas;
-		var ctx = canvas.getContext('2d');
-		ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-		board.render_cursor(this.edit_cursor, canvas);
+	this.render_cursor = function() {
+		reset_canvas(this.cursor_canvas);
+		board.render_cursor(this.edit_cursor, this.cursor_canvas);
 	}
 	
   this.manual_move = function(pos, type) {
@@ -451,7 +462,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
       push_state();
     }
 
-    this.refresh();
+    this.refresh_board();
     if (this.status == 'in_play' && changed) {
       this.solve();
     } else if (this.status != 'in_play') {
@@ -551,7 +562,8 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
   this.solve_first_safe = function() {
     var sol_context = new_solution_context(this);
     sol_context.update(new Solution({_other: 0.}), 0.);
-    this.set_solution(sol_context);
+      this.set_solution(sol_context);
+	  this.refresh_solution();
   }
 
   this.mouse_cell = function(e) {
@@ -580,7 +592,8 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     this.board.restore(snapshot.board_state);
     this.set_solution(SOLUTIONS[this.seq]);
 
-    this.refresh();
+      this.refresh_board();
+	  this.refresh_solution();
   }
 }
 
@@ -590,11 +603,7 @@ function solve_query(board, url, callback, get_state) {
       if (data.error) {
         callback(null, null);
       } else {
-        if (data.solution == null) {
-          alert('game state detected as inconsistent!');
-        }
-
-        callback(new Solution(data.solution), data.processing_time);
+          callback(new Solution(data.solution), data.processing_time);
       }
     }, "json");
 }
@@ -608,7 +617,8 @@ function warm_api() {
 }
 
 function Solution(probs) {
-  this.cell_probs = probs;
+	this.inconsistent = (probs == null);
+	this.cell_probs = probs || {};
   this.best_guesses = {};
   this.other_cells = {};
 
@@ -618,15 +628,17 @@ function Solution(probs) {
     var must_guess = true;
     var guesses = [];
     var min_prob = 1.;
-    this.each(board, function (pos, cell, prob, board) {
-        if (prob < EPSILON) {
+      this.each(board, function (pos, cell, prob, board) {
+		  if (cell.visible) {
+			  // present in 'everything mode' solutions; ignore
+		  } else if (prob < EPSILON) {
           must_guess = false;
         } else if (prob < 1. - EPSILON) {
           guesses.push({name: cell.name, p: prob});
           min_prob = Math.min(min_prob, prob);
         }
       });
-
+	  
     if (must_guess) {
       var solu = this;
       $.each(guesses, function(i, guess) {
@@ -656,8 +668,10 @@ function Solution(probs) {
   }
 
 	this.render = function(canvas, board) {
-		var ctx = canvas.getContext('2d');
-		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		reset_canvas(canvas);
+		if (this.inconsistent) {
+			return;
+		}
 		
       var solu = this;	  
 		this.each(board, function (pos, cell, prob, board) {
@@ -781,8 +795,7 @@ function prob_tooltip(pos, mousePos) {
 
 function neighbor_overlay(pos) {
   var canvas = $('#neighbor_layer')[0];
-  var ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+	reset_canvas(canvas);
   if (!get_setting('highlighting')) {
     return;
   }
@@ -801,6 +814,12 @@ function neighbor_overlay(pos) {
     });
 }
 
+function reset_canvas(canvas) {
+	var ctx = canvas.getContext('2d');
+	ctx.clearRect(0, 0, canvas.width, canvas.height);
+	return ctx;
+}
+
 function resize_canvas() {
   var w = Math.max(window.innerWidth - 30, 400);
   var h = Math.max(window.innerHeight - 250, 300); 
@@ -814,7 +833,8 @@ function resize_canvas() {
     });
 
   if (window.GAME) {
-    GAME.refresh();
+      GAME.refresh_board();
+	  GAME.refresh_solution();
   }
 }
 

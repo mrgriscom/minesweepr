@@ -380,8 +380,7 @@ function Board (topology) {
     };
     params = $.extend(default_params, params || {});
 
-    var ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+      var ctx = reset_canvas(canvas);
       this.for_each_cell(function (pos, cell, board) {
         cell.render(board.topology.geom(pos, canvas), ctx, params);
       });
@@ -538,7 +537,7 @@ function GridTopo (width, height, wrap, adjfunc) {
     var c_hi = Math.min(center.c + dim, wrap ? +BIG : width - 1);
     for (var r = r_lo; r <= r_hi; r++) {
       for (var c = c_lo; c <= c_hi; c++) {
-        do_((r + this.height) % this.height, (c + this.width) % this.width);
+          do_(mod(r, this.height), mod(c, this.width));
       }
     }    
   }
@@ -557,7 +556,9 @@ function GridTopo (width, height, wrap, adjfunc) {
   }
 
 	this.increment_ix = function(ix, axis, dir) {
-		ix[{x: 'c', y: 'r'}[axis]] += (dir ? 1 : -1);
+		var dim = {x: 'c', y: 'r'}[axis];
+		var sz = {x: this.width, y: this.height}[axis];
+		ix[dim] = mod(ix[dim] + (dir ? 1 : -1), sz);
 	}
 	
   this.cell_dim = function (canvas) {
@@ -639,7 +640,10 @@ function HexGridTopo (width, height) {
   }
 
 	this.increment_ix = function(ix, axis, dir) {
-		ix[{x: 'c', y: 'r'}[axis]] += (dir ? 1 : -1);
+		var dim = {x: 'c', y: 'r'}[axis];
+		var sz = {x: this.row_width(ix.r), y: this.height}[axis];
+		ix[dim] = mod(ix[dim] + (dir ? 1 : -1), sz);
+		ix.c = Math.min(ix.c, this.row_width(ix.r) - 1);
 	}
 	
   this.cell_dim = function (canvas) {
@@ -908,7 +912,8 @@ function Cube3dTopo (width, height, depth) {
   }
 
 	this.increment_ix = function(ix, axis, dir) {
-		ix[axis] += (dir ? 1 : -1);
+		var sz = {x: this.w, y: this.h, z: this.d}[axis];
+		ix[axis] = mod(ix[axis] + (dir ? 1 : -1), sz);
 	}
 
   this.extent = function(w, h, rot, tilt) {
@@ -1025,4 +1030,8 @@ function choose_rand(data) {
 
 function rads(degs) {
   return Math.PI * degs / 180.;
+}
+
+function mod(a, b) {
+	return ((a % b) + b) % b;
 }
