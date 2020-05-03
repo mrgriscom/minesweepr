@@ -47,17 +47,19 @@ function Board (topology) {
   }
 
   this.init = function (mine_dist) {
-    for (var i = 0; i < mine_dist.length; i++) {
-      this.cells.push(new Cell(null, mine_dist[i] ? 'mine' : null, false, false));
+      for (var i = 0; i < this.topology.num_cells(); i++) {
+      this.cells.push(new Cell(null, 0, false, false));
     }
     this.for_each_cell(function (pos, cell, board) {
         cell.pos = pos;      
         cell.name = board.topology.cell_name(pos);
         board.cells_by_name[cell.name] = cell;
-      });
+    });
+	  /*
     this.for_each_cell(function (pos, cell, board) {
         board.init_cell_state(pos, cell);
       });
+*/
   }
 
   //reshuffle board so 'pos' will not be a mine
@@ -121,7 +123,7 @@ function Board (topology) {
           if (cell.state == 0) {
             board.for_each_neighbor(pos, function (pos, neighb, board) {
               // would recurse here, but add to queue instead
-              cascades.push(pos);
+              //cascades.push(pos);
             });
           }
           return true;
@@ -215,7 +217,8 @@ function Board (topology) {
   }
 
   //return whether the board has been fully cleared. 'strict' mode requires all mines to be flagged
-  this.is_complete = function (strict) {
+	this.is_complete = function (strict) {
+		return false;
     var complete = true;
     this.for_each_cell(function (pos, cell, board) {
         if (cell.state == 'mine') {
@@ -279,7 +282,12 @@ function Board (topology) {
       });
   }
 
-  this.game_state = function (known_mines, everything_mode) {
+	this.game_state = function (known_mines, everything_mode) {
+
+//		any uncovered N - adjacent non-visible
+//		any zero next to non-visible
+
+		
     // known_mines is a list of cell (names) actually known to be mines. if null, flagged cells
     // will be considered mines. this is 'trust flags' mode
 
@@ -374,7 +382,7 @@ function Board (topology) {
 
     var ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    this.for_each_cell(function (pos, cell, board) {
+      this.for_each_cell(function (pos, cell, board) {
         cell.render(board.topology.geom(pos, canvas), ctx, params);
       });
   }
@@ -383,6 +391,10 @@ function Board (topology) {
     this.get_cell(pos).render_overlay(this.topology.geom(pos, canvas), fill, alert, canvas.getContext('2d'));
   }
 
+	this.render_cursor = function(pos, canvas) {
+		this.get_cell(pos).render_cursor(this.topology.geom(pos, canvas), canvas.getContext('2d'));
+	}
+	
   this.cell_from_xy = function(p, canvas) {
     return this.topology.cell_from_xy(p, canvas);
   }
@@ -423,9 +435,11 @@ function Cell (name, state, visible, flagged) {
   this.visible = visible;
   this.flagged = flagged;
 
-  this.render = function (g, ctx, params) {
-    ctx.fillStyle = (this.visible ? VISIBLE_BG : HIDDEN_BG);
-    g.fill(ctx);
+	this.render = function (g, ctx, params) {
+		ctx.beginPath();
+		g.path(ctx);
+		ctx.fillStyle = (this.visible ? VISIBLE_BG : HIDDEN_BG);
+		ctx.fill();
 
     var draw_mine = function(mode, material) {
       ctx[mode == 'fill' ? 'fillStyle' : 'strokeStyle'] = material;
@@ -455,13 +469,29 @@ function Cell (name, state, visible, flagged) {
   }
 
   this.render_overlay = function (g, fill, alert, ctx) {
-    ctx.fillStyle = fill;
-    g.fill(ctx);
+	  ctx.beginPath();
+	  g.path(ctx);
+      ctx.fillStyle = fill;
+	  ctx.fill();
 
     if (alert) {
       textContext(ctx, g, 'rgba(0, 0, 0, .6)', 1.4 * MINE_RADIUS, true)('!');
     }
   }
+
+	this.render_cursor = function(g, ctx) {
+		ctx.beginPath();
+		g.path(ctx);
+
+		ctx.save();
+		ctx.clip()
+		  
+		ctx.strokeStyle = "#ff000060";
+		ctx.lineWidth = g.span / 7. * 2 /* only one half is rendered; other half is clipped out */;
+		ctx.stroke();
+
+		ctx.restore();
+	}
 }
 
 function textContext(ctx, g, fill, size, bold) {
@@ -526,6 +556,10 @@ function GridTopo (width, height, wrap, adjfunc) {
     return adj;
   }
 
+	this.increment_ix = function(ix, axis, dir) {
+		ix[{x: 'c', y: 'r'}[axis]] += (dir ? 1 : -1);
+	}
+	
   this.cell_dim = function (canvas) {
     var dim = Math.min(canvas.height / this.height, canvas.width / this.width);
     return (dim >= 10. ? Math.floor(dim) : dim);
@@ -536,10 +570,10 @@ function GridTopo (width, height, wrap, adjfunc) {
     var span = dim - MARGIN;
     var corner = [pos.c * dim, pos.r * dim];
     var center = [corner[0] + .5 * span, corner[1] + .5 * span];
-    var fillfunc = function(ctx) {
-      ctx.fillRect(corner[0], corner[1], span, span);
+    var path = function(ctx) {
+      ctx.rect(corner[0], corner[1], span, span);
     }
-    return {span: span, center: center, fill: fillfunc};
+      return {span: span, center: center, path: path};
   }
 
   this.cell_from_xy = function (p, canvas) {
@@ -604,6 +638,10 @@ function HexGridTopo (width, height) {
     return adj;
   }
 
+	this.increment_ix = function(ix, axis, dir) {
+		ix[{x: 'c', y: 'r'}[axis]] += (dir ? 1 : -1);
+	}
+	
   this.cell_dim = function (canvas) {
     return Math.min(canvas.height / (.75 * this.height + .25), canvas.width / (Math.sqrt(3.) / 2. * (this.width + 1)));
   }
@@ -612,16 +650,14 @@ function HexGridTopo (width, height) {
     var dim = this.cell_dim(canvas);
     var span = dim - MARGIN;
     var center = [Math.sqrt(3.) / 2. * dim * (pos.c + (pos.r % 2 == 0 ? 1 : .5)), dim * (.75 * pos.r + .5)];
-    var fillfunc = function(ctx) {
-      ctx.beginPath();
+    var path = function(ctx) {
       for (var i = 0; i < 6; i++) {
         var angle = 2*Math.PI / 6. * i;
         ctx.lineTo(center[0] + .5 * span * Math.sin(angle), center[1] + .5 * span * Math.cos(angle));
       }
-      ctx.closePath();
-      ctx.fill();
+		ctx.closePath();
     }
-    return {span: span * .8, center: center, fill: fillfunc};
+      return {span: span * .8, center: center, path: path};
   }
 
   this.cell_from_xy = function (p, canvas) {
@@ -765,6 +801,11 @@ function CubeSurfaceTopo (width, height, depth) {
     return adj;
   }
 
+	this.increment_ix = function(ix, axis, dir) {
+		// FIXME support faces and shit ugh
+		ix[{x: 'c', y: 'r'}[axis]] += (dir ? 1 : -1);
+	}
+
   this.EDGE_MARGIN = .1;
 
   this.constants = function(canvas) {
@@ -803,11 +844,11 @@ function CubeSurfaceTopo (width, height, depth) {
 
     var span = c.dim - MARGIN;
     var p = c.corner(pos);
-    var fillfunc = function(ctx) {
-      ctx.fillRect(p.px, p.py, span, span);
+    var path = function(ctx) {
+      ctx.rect(p.px, p.py, span, span);
     }
 
-    return {span: span, center: [p.px + .5 * span, p.py + .5 * span], fill: fillfunc};
+    return {span: span, center: [p.px + .5 * span, p.py + .5 * span], path: path};
   }
 
   this.cell_from_xy = function (p, canvas) {
@@ -866,6 +907,10 @@ function Cube3dTopo (width, height, depth) {
     return adj;
   }
 
+	this.increment_ix = function(ix, axis, dir) {
+		ix[axis] += (dir ? 1 : -1);
+	}
+
   this.extent = function(w, h, rot, tilt) {
     var v_max = w * Math.abs(Math.sin(rot)) + h * Math.abs(Math.cos(rot));
     var h_max = (w * Math.abs(Math.cos(rot)) + h * Math.abs(Math.sin(rot))) * Math.sin(tilt);
@@ -911,19 +956,17 @@ function Cube3dTopo (width, height, depth) {
     }
     
     var center = transform(pos.x + .5, pos.y + .5, pos.z);
-    var fillfunc = function(ctx) {
+    var path = function(ctx) {
       var k = .5 * MARGIN / self.scale;
       var offsets = [[k, k], [k, 1 - k], [1 - k, 1 - k], [1 - k, k], [k, k]];
      
-      ctx.beginPath();
       for (var i = 0; i < offsets.length; i++) {
         var p = transform(pos.x + offsets[i][0], pos.y + offsets[i][1], pos.z);
         ctx.lineTo(p.x, p.y);
       }
       ctx.closePath();
-      ctx.fill();
     }
-    return {span: self.span, center: [center.x, center.y], fill: fillfunc};
+      return {span: self.span, center: [center.x, center.y], path: path};
   }
   
   this.cell_from_xy = function (p, canvas) {

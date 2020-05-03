@@ -65,6 +65,25 @@ $(document).ready(function() {
     shortcut.add('ctrl+z', undo);
     shortcut.add('ctrl+left', undo);
 
+	for (var i = 0; i < 10; i++) {
+		shortcut.add('' + i, (function(x) {
+			return function() { GAME.set_cell_state(x); }
+		})(i), {disable_in_input: true});
+	}
+	shortcut.add(' ', function() { GAME.set_cell_state(0); }, {disable_in_input: true});
+	// FIXME
+	shortcut.add('shift+/', function() { GAME.set_cell_state(null); }, {type: 'keypress', disable_in_input: true});
+	shortcut.add('delete', function() { GAME.set_cell_state(null); }, {disable_in_input: true});
+	shortcut.add('up', function() { GAME.move_cursor('y', false); }, {disable_in_input: true});
+	shortcut.add('down', function() { GAME.move_cursor('y', true); }, {disable_in_input: true});
+	shortcut.add('left', function() { GAME.move_cursor('x', false); }, {disable_in_input: true});
+	shortcut.add('right', function() { GAME.move_cursor('x', true); }, {disable_in_input: true});
+	shortcut.add('page_up', function() { GAME.move_cursor('z', false); }, {disable_in_input: true});
+	shortcut.add('page_down', function() { GAME.move_cursor('z', true); }, {disable_in_input: true});
+	// FIXME
+	shortcut.add('+', function() { GAME.incr_cell_state(true); }, {type: 'keypress', disable_in_input: true});
+	shortcut.add('-', function() { GAME.incr_cell_state(false); }, {type: 'keypress', disable_in_input: true});
+	
     set_defaults();
     new_game();
   });
@@ -164,7 +183,7 @@ function new_game() {
   var topo = get_topo();
   var minespec = parsemine($('#mines').val(), topo.num_cells());
   var board = new_board(topo, minespec);
-  GAME = new GameSession(board, $('#game_canvas')[0], first_safe);
+	GAME = new GameSession(board, $('#game_canvas')[0], $('#solution')[0], $('#cursor')[0], first_safe);
 
   game_reset();
   GAME.start();
@@ -199,9 +218,9 @@ function new_topo(type, w, h, d) {
 }
 
 function new_board(topo, minespec) {
-  board = new Board(topo);
-  board[{'count': 'populate_n', 'prob': 'populate_p'}[minespec.mode]](minespec.k);
-  return board;
+	board = new Board(topo);
+	board[{'count': 'populate_n', 'prob': 'populate_p'}[minespec.mode]](minespec.k);
+	return board;
 }
 
 function manual_move(e) {
@@ -220,11 +239,39 @@ function undo() {
   }
 }
 
-function GameSession(board, canvas, first_safe) {
+function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) {
   this.board = board;
-  this.canvas = canvas;
+	this.canvas = canvas;
+	this.solution_canvas = solution_canvas;
+	this.cursor_canvas = cursor_canvas;
   this.first_safe = first_safe;
 
+	this.edit_cursor = {...board.cells[0].pos};
+
+	this.move_cursor = function(axis, dir) {
+		board.topology.increment_ix(this.edit_cursor, axis, dir);
+		this.render_cursor();
+	};
+
+	this.set_cell_state = function(num_mines) {
+		var cell = this.board.get_cell(this.edit_cursor);
+		if (num_mines == null) {
+			console.log('sup');
+			cell.visible = false;
+		} else {
+			cell.visible = true;
+			cell.state = num_mines;
+		}
+		this.solve();
+		this.refresh();
+	}
+
+	this.incr_cell_state = function(up) {
+		console.log('incr', up);
+		this.solve();
+		this.refresh();
+	}
+	
   this.start = function() {
     this.seq = next_seq();
     this.status = 'in_play';
@@ -271,7 +318,7 @@ function GameSession(board, canvas, first_safe) {
           game.refresh();
         }
       }, function(board) {
-        return board.game_state(game.known_mines);
+          return board.game_state(null, true);
       });
   }
 
@@ -296,15 +343,23 @@ function GameSession(board, canvas, first_safe) {
 
   this.render = function() {
     var params = {
-      show_mines: this.show_mines() && !this.first_safety(),
+		show_mines: this.show_mines() && !this.first_safety(),
     };
 
     this.board.render(this.canvas, params);
     if (this.show_solution()) {
-      this.display_solution.render(this.canvas, this.board);
+      this.display_solution.render(this.solution_canvas, this.board);
     }
   }
 
+	this.render_cursor = function(canvas) {
+		var canvas = this.cursor_canvas;
+		var ctx = canvas.getContext('2d');
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+		board.render_cursor(this.edit_cursor, canvas);
+	}
+	
   this.manual_move = function(pos, type) {
     if (!get_setting('play_manual')) {
       return;
@@ -600,9 +655,17 @@ function Solution(probs) {
     _apply(Object.keys(this.other_cells), function(name) { return solu.other_prob(); });
   }
 
-  this.render = function(canvas, board) {
-    var solu = this;
-    this.each(board, function (pos, cell, prob, board) {
+	this.render = function(canvas, board) {
+		var ctx = canvas.getContext('2d');
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		
+      var solu = this;	  
+		this.each(board, function (pos, cell, prob, board) {
+			// don't render for uncovered cells
+			if (cell.visible) {
+				return;
+			}
+			
         // still render overlay for cells erroneously flagged, or cells correctly flagged
         // but we shouldn't know that yet (p != 1.)
         if (!(cell.flagged && cell.state == 'mine') || prob < 1.) {
