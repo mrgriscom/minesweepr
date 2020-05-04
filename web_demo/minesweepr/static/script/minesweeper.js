@@ -260,10 +260,11 @@ function Board (topology) {
     return choose_rand(c);
   }
 
-  this.for_each_cell = function (func) {
-    this.topology.for_each_index(this, function(ix, board) {
-        func(ix, board.get_cell(ix), board);
-      });
+	this.for_each_cell = function (func) {
+		var board = this;
+		this.topology.for_each_index(function(ix) {
+			func(ix, board.get_cell(ix), board);
+		});
   }
 
   this.for_each_neighbor = function (pos, func) {
@@ -283,11 +284,6 @@ function Board (topology) {
   }
 
 	this.game_state = function (known_mines, everything_mode) {
-
-//		any uncovered N - adjacent non-visible
-//		any zero next to non-visible
-
-		
     // known_mines is a list of cell (names) actually known to be mines. if null, flagged cells
     // will be considered mines. this is 'trust flags' mode
 
@@ -519,37 +515,49 @@ function GridTopo (width, height, wrap, adjfunc) {
     return pos.r * this.width + pos.c;
   }
 
-  this.for_each_index = function(board, do_) {
-    this.for_range({r: 0, c: 0}, Math.max(this.width, this.height), false, function(r, c) {
-        do_({r: r, c: c}, board);
-      });
+  this.for_each_index = function(do_) {
+      this.for_range(0, this.width - 1, 0, this.height - 1, false, do_);
   }
 
   this.num_cells = function () {
     return this.width * this.height;
   }
 
-  this.for_range = function(center, dim, wrap, do_) {
-    var BIG = 1e6;
-    var r_lo = Math.max(center.r - dim, wrap ? -BIG : 0);
-    var r_hi = Math.min(center.r + dim, wrap ? +BIG : height - 1);
-    var c_lo = Math.max(center.c - dim, wrap ? -BIG : 0);
-    var c_hi = Math.min(center.c + dim, wrap ? +BIG : width - 1);
-    for (var r = r_lo; r <= r_hi; r++) {
-      for (var c = c_lo; c <= c_hi; c++) {
-          do_(mod(r, this.height), mod(c, this.width));
-      }
-    }    
-  }
+	this.for_radius = function(center, dim, do_) {
+		this.for_range(center.c - dim, center.c + dim, center.r - dim, center.r + dim, this.wrap, do_);
+	}
 
+	this.for_select_range = function(pos0, pos1, do_) {
+		this.for_range(
+			Math.min(pos0.c, pos1.c),
+			Math.max(pos0.c, pos1.c),
+			Math.min(pos0.r, pos1.r),
+			Math.max(pos0.r, pos1.r),
+			false, do_);
+	}
+	
+	this.for_range = function(x0, x1, y0, y1, wrap, do_) {
+		if (!wrap) {
+			x0 = Math.max(x0, 0);
+			y0 = Math.max(y0, 0);
+			x1 = Math.min(x1, this.width - 1);
+			y1 = Math.min(y1, this.height - 1);
+		}
+		for (var r = y0; r <= y1; r++) {
+			for (var c = x0; c <= x1; c++) {
+				do_({r: mod(r, this.height), c: mod(c, this.width)});
+			}
+		}
+	}
+	
   this.adjacent = function (pos) {
     var adj = [];
     var adjfunc = this.adjfunc || function(topo, pos, do_) {
-      topo.for_range(pos, 1, topo.wrap, do_);
+      topo.for_radius(pos, 1, do_);
     };
-    adjfunc(this, pos, function(r, c) {
-        if (r != pos.r || c != pos.c) {
-          adj.push({r: r, c: c});
+    adjfunc(this, pos, function(ix) {
+        if (ix.r != pos.r || ix.c != pos.c) {
+          adj.push(ix);
         }
       });
     return adj;
@@ -601,10 +609,10 @@ function HexGridTopo (width, height) {
     return pos.r * this.width + Math.floor(pos.r / 2) + pos.c;
   }
 
-  this.for_each_index = function(board, do_) {
+  this.for_each_index = function(do_) {
     for (var r = 0; r < this.height; r++) {
       for (var c = 0; c < this.row_width(r); c++) {
-        do_({r: r, c: c}, board);
+        do_({r: r, c: c});
       }
     }
   }
@@ -644,6 +652,18 @@ function HexGridTopo (width, height) {
 		var sz = {x: this.row_width(ix.r), y: this.height}[axis];
 		ix[dim] = mod(ix[dim] + (dir ? 1 : -1), sz);
 		ix.c = Math.min(ix.c, this.row_width(ix.r) - 1);
+	}
+
+	this.for_select_range = function(pos0, pos1, do_) {
+		var x0 = Math.min(pos0.c, pos1.c);
+		var x1 = Math.max(pos0.c, pos1.c);
+		var y0 = Math.min(pos0.r, pos1.r);
+		var y1 = Math.max(pos0.r, pos1.r);
+		for (var r = y0; r <= y1; r++) {
+			for (var c = x0; c <= Math.min(x1, this.row_width(r) - 1); c++) {
+				do_({r: r, c: c});
+			}
+		}
 	}
 	
   this.cell_dim = function (canvas) {
@@ -722,12 +742,12 @@ function CubeSurfaceTopo (width, height, depth) {
     return ix + pos.r * this.face_dim(pos.face).w + pos.c;
   }
 
-  this.for_each_index = function(board, do_) {
+  this.for_each_index = function(do_) {
     for (var f = 1; f <= 6; f++) {
       var ext = this.face_dim(f);
       for (var r = 0; r < ext.h; r++) {
         for (var c = 0; c < ext.w; c++) {
-          do_({face: f, r: r, c: c}, board);
+          do_({face: f, r: r, c: c});
         }
       }
     }
@@ -763,85 +783,122 @@ function CubeSurfaceTopo (width, height, depth) {
 
   this.adjacent = function (pos) {
     var adj = [];
-    for (var r = pos.r - 1; r <= pos.r + 1; r++) {
-      for (var c = pos.c - 1; c <= pos.c + 1; c++) {
-        var ext = this.face_dim(pos.face);
-        var r_oor = (r < 0 || r >= ext.h);
-        var c_oor = (c < 0 || c >= ext.w);
-        if (!r_oor || !c_oor) {
-          if (r_oor || c_oor) {
-            if (r < 0) {
-              var dir = 0;
-            } else if (r >= ext.h) {
-              var dir = 2;
-            } else if (c < 0) {
-              var dir = 3;
-            } else if (c >= ext.w) {
-              var dir = 1;
-            }
-            var edge = null;
-            for (var i = 0; i < this.face_adj.length; i++) {
-              var e = this.face_adj[i];
-              if ((e.f0 == pos.face && e.dir == dir) || (e.f1 == pos.face && e.dir == (dir + e.orient + 2) % 4)) {
-                edge = e;
-                break;
-              }
-            }
-            var _r = (r >= ext.h ? r - ext.h : r);
-            var _c = (c >= ext.w ? c - ext.w : c);
-            if (edge.f0 == pos.face) {
-              adj.push(this.get(edge.f1, _r, _c, edge.orient));
-            } else {
-              adj.push(this.get(edge.f0, _r, _c, (4 - edge.orient) % 4));
-            }
-          } else {
-            if (r != pos.r || c != pos.c) {
-              adj.push({r: r, c: c, face: pos.face});
-            }
-          }
-        }
-      }
-    }
+    for (var dr = -1; dr <= 1; dr++) {
+		for (var dc = -1; dc <= 1; dc++) {
+			var _adj = this.adjacent_for(pos, dr, dc);
+			if (_adj != null) {
+				adj.push(_adj);
+			}
+		}
+	}
     return adj;
   }
 
+	this.adjacent_for = function(pos, dr, dc) {
+		var r = pos.r + dr;
+		var c = pos.c + dc;
+		var ext = this.face_dim(pos.face);
+		var r_oor = (r < 0 || r >= ext.h);
+		var c_oor = (c < 0 || c >= ext.w);
+		if (!r_oor || !c_oor) {
+			if (r_oor || c_oor) {
+				if (r < 0) {
+					var dir = 0;
+				} else if (r >= ext.h) {
+					var dir = 2;
+				} else if (c < 0) {
+					var dir = 3;
+				} else if (c >= ext.w) {
+					var dir = 1;
+				}
+				var edge = null;
+				for (var i = 0; i < this.face_adj.length; i++) {
+					var e = this.face_adj[i];
+					if ((e.f0 == pos.face && e.dir == dir) || (e.f1 == pos.face && e.dir == (dir + e.orient + 2) % 4)) {
+						edge = e;
+						break;
+					}
+				}
+				var _r = (r >= ext.h ? r - ext.h : r);
+				var _c = (c >= ext.w ? c - ext.w : c);
+				if (edge.f0 == pos.face) {
+					return this.get(edge.f1, _r, _c, edge.orient);
+				} else {
+					return this.get(edge.f0, _r, _c, (4 - edge.orient) % 4);
+				}
+			} else {
+				if (r != pos.r || c != pos.c) {
+					return {r: r, c: c, face: pos.face};
+				}
+			}
+		}
+		return null;
+	}
+	
 	this.increment_ix = function(ix, axis, dir) {
-		// FIXME support faces and shit ugh
-		ix[{x: 'c', y: 'r'}[axis]] += (dir ? 1 : -1);
+		var incr = (dir ? 1 : -1);
+		// note: axis reversal -- x maps to row and y to col
+		var adj = this.adjacent_for(ix, axis == 'x' ? incr : 0, axis == 'y' ? incr : 0);
+		// need to update in place, not return
+		ix.face = adj.face;
+		ix.r = adj.r;
+		ix.c = adj.c;
 	}
 
-  this.EDGE_MARGIN = .1;
+	this.for_select_range = function(pos0, pos1, do_) {
+		var c = this.constants();
+		var xy0 = c.corner(pos0);
+		var xy1 = c.corner(pos1);
+		var x0 = Math.min(xy0.px, xy1.px);
+		var y0 = Math.min(xy0.py, xy1.py);
+		var x1 = Math.max(xy0.px, xy1.px);
+		var y1 = Math.max(xy0.py, xy1.py);
+		this.for_each_index(function(ix) {
+			var xy = c.corner(ix);
+			if (xy.px >= x0 && xy.px <= x1 && xy.py >= y0 && xy.py <= y1) {
+				do_(ix);
+			}
+		});
+	}
 
-  this.constants = function(canvas) {
-    var x_offset = [0, this.width, this.width + this.height];
-    var y_offset = [0, this.height, this.height + this.depth, this.height + this.depth + this.width]
-    for (var i = 0; i < x_offset.length; i++) {
-      x_offset[i] += i * this.EDGE_MARGIN;
-    }
-    for (var i = 0; i < y_offset.length; i++) {
-      y_offset[i] += i * this.EDGE_MARGIN;
-    }
-    var x_max = x_offset[2] + this.depth;
-    var y_max = y_offset[3] + this.height;
-    var _t = x_max; x_max = y_max; y_max = _t;
+	this.EDGE_MARGIN = .1;
 
-    var dim = Math.min(canvas.height / y_max, canvas.width / x_max);
-    var snap = function(k) {
-      return (dim >= 10. ? Math.floor(k) : k);
-    }
+	this.constants = function(canvas) {
+		var margin = (canvas != null ? this.EDGE_MARGIN : 0);
+		
+		var x_offset = [0, this.width, this.width + this.height];
+		var y_offset = [0, this.height, this.height + this.depth, this.height + this.depth + this.width]
+		for (var i = 0; i < x_offset.length; i++) {
+			x_offset[i] += i * margin;
+		}
+		for (var i = 0; i < y_offset.length; i++) {
+			y_offset[i] += i * margin;
+		}
+		var x_max = x_offset[2] + this.depth;
+		var y_max = y_offset[3] + this.height;
+		var _t = x_max; x_max = y_max; y_max = _t;
 
-    var corner = function(pos) {
-      var face_row = Math.floor(pos.face / 2);
-      var face_col = Math.floor((pos.face - 1) / 2);
-      var x = pos.c + x_offset[face_col];
-      var y = pos.r + y_offset[face_row];
-      var _t = x; x = y; y = _t;
+		if (canvas != null) {
+			var dim = Math.min(canvas.height / y_max, canvas.width / x_max);
+		} else {
+			var dim = 1;
+		}
+		var snap = function(k) {
+			return (dim >= 10. ? Math.floor(k) : k);
+		}
+		
+		var corner = function(pos) {
+			var face_row = Math.floor(pos.face / 2);
+			var face_col = Math.floor((pos.face - 1) / 2);
+			var x = pos.c + x_offset[face_col];
+			var y = pos.r + y_offset[face_row];
+			var _t = x; x = y; y = _t;
+			
+			return {px: snap(snap(dim) * x), py: snap(snap(dim) * y)};
+		}
 
-      return {px: snap(snap(dim) * x), py: snap(snap(dim) * y)};
-    }
-
-    return {dim: snap(dim), corner: corner};
-  }
+		return {dim: snap(dim), corner: corner};
+	}
 
   this.geom = function (pos, canvas) {
     var c = this.constants(canvas);
@@ -883,32 +940,56 @@ function Cube3dTopo (width, height, depth) {
     return (pos.z * this.h + pos.y) * this.w + pos.x;
   }
 
-  this.for_each_index = function(board, do_) {
-    for (var x = 0; x < this.w; x++) {
-      for (var y = 0; y < this.h; y++) {
-        for (var z = 0; z < this.d; z++) {
-          do_({x: x, y: y, z: z}, board);
-        }
-      }
-    }
+  this.for_each_index = function(do_) {
+      this.for_range(0, this.w - 1, 0, this.h - 1, 0, this.d - 1, do_);
   }
 
+	this.for_radius = function(center, dim, do_) {
+		this.for_range(center.x - dim, center.x + dim,
+					   center.y - dim, center.y + dim,
+					   center.z - dim, center.z + dim,
+					   do_);
+	}
+
+	this.for_select_range = function(pos0, pos1, do_) {
+		this.for_range(
+			Math.min(pos0.x, pos1.x),
+			Math.max(pos0.x, pos1.x),
+			Math.min(pos0.y, pos1.y),
+			Math.max(pos0.y, pos1.y),
+			Math.min(pos0.z, pos1.z),
+			Math.max(pos0.z, pos1.z),
+			do_);
+	}
+	
+	this.for_range = function(x0, x1, y0, y1, z0, z1, do_) {
+		x0 = Math.max(x0, 0);
+		y0 = Math.max(y0, 0);
+		z0 = Math.max(z0, 0);
+		x1 = Math.min(x1, this.w - 1);
+		y1 = Math.min(y1, this.h - 1);
+		z1 = Math.min(z1, this.d - 1);
+		for (var x = x0; x <= x1; x++) {
+			for (var y = y0; y <= y1; y++) {
+				for (var z = z0; z <= z1; z++) {
+					do_({x: x, y: y, z: z});
+				}
+			}
+		}
+	}
+	
   this.num_cells = function () {
     return this.w * this.h * this.d;
   }
 
   this.adjacent = function (pos) {
-    var adj = [];
-    for (var x = Math.max(pos.x - 1, 0); x <= Math.min(pos.x + 1, this.w - 1); x++) {
-      for (var y = Math.max(pos.y - 1, 0); y <= Math.min(pos.y + 1, this.h - 1); y++) {
-        for (var z = Math.max(pos.z - 1, 0); z <= Math.min(pos.z + 1, this.d - 1); z++) {
-          if (x != pos.x || y != pos.y || z != pos.z) {
-            adj.push({x: x, y: y, z: z});
-          }
+      var adj = [];
+	  this.for_radius(pos, 1, function(ix) {
+        if (ix.x != pos.x || ix.y != pos.y || ix.z != pos.z) {
+          adj.push(ix);
         }
-      }
-    }
-    return adj;
+      });
+      return adj;
   }
 
 	this.increment_ix = function(ix, axis, dir) {

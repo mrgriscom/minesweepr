@@ -24,14 +24,25 @@ $(document).ready(function() {
         return false;
       });
 
+	/*
     UI_CANVAS.bind('mouseup', function(e) {
         manual_move(e);
         return false;
       });
+*/
     UI_CANVAS.bind('contextmenu', function(e) {
         return false;
       });
-
+	UI_CANVAS.bind('mousedown', function(e) {
+		GAME.cursor_dragstart(e);
+	});
+	UI_CANVAS.bind('mousemove', function(e) {
+		GAME.cursor_drag(e);
+	});
+	$(window).bind('mouseup', function(e) {
+		GAME.cursor_dragend(e);
+	});
+	
     $('#show_mines').click(function(e) {
         GAME.refresh_board();
 		GAME.refresh_solution();
@@ -77,16 +88,21 @@ $(document).ready(function() {
 	// FIXME
 	shortcut.add('shift+/', function() { GAME.set_cell_state(null); }, {type: 'keypress', disable_in_input: true});
 	shortcut.add('delete', function() { GAME.set_cell_state(null); }, {disable_in_input: true});
-	shortcut.add('up', function() { GAME.move_cursor('y', false); }, {disable_in_input: true});
-	shortcut.add('down', function() { GAME.move_cursor('y', true); }, {disable_in_input: true});
-	shortcut.add('left', function() { GAME.move_cursor('x', false); }, {disable_in_input: true});
-	shortcut.add('right', function() { GAME.move_cursor('x', true); }, {disable_in_input: true});
-	shortcut.add('page_up', function() { GAME.move_cursor('z', false); }, {disable_in_input: true});
-	shortcut.add('page_down', function() { GAME.move_cursor('z', true); }, {disable_in_input: true});
 	// FIXME
 	shortcut.add('+', function() { GAME.incr_cell_state(true); }, {type: 'keypress', disable_in_input: true});
+	shortcut.add('=', function() { GAME.incr_cell_state(true); }, {type: 'keypress', disable_in_input: true});
 	shortcut.add('-', function() { GAME.incr_cell_state(false); }, {type: 'keypress', disable_in_input: true});
-	
+
+	$.each([false, true], function(i, range) {
+		var prefix = (range ? 'shift+' : '');
+		shortcut.add(prefix + 'up', function() { GAME.move_cursor('y', false, range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'down', function() { GAME.move_cursor('y', true, range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'left', function() { GAME.move_cursor('x', false, range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'right', function() { GAME.move_cursor('x', true, range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'page_up', function() { GAME.move_cursor('z', false, range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'page_down', function() { GAME.move_cursor('z', true, range); }, {disable_in_input: true});
+	});
+		
     set_defaults();
     new_game();
   });
@@ -204,10 +220,13 @@ function new_topo(type, w, h, d) {
   } else if (type == 'torus') {
     return new GridTopo(w, h, true);
   } else if (type == 'grid2') {
-    return new GridTopo(w, h, false, function(topo, pos, do_) {
-        topo.for_range(pos, 2, topo.wrap, function(r, c) {
-            if (Math.abs(pos.r - r) + Math.abs(pos.c - c) <= 3) {
-              do_(r, c);
+      return new GridTopo(w, h, false, function(topo, pos, do_) {
+		  if (topo.wrap) {
+			  throw 'adjacency logic doesn\'t support wrapping';
+		  }
+          topo.for_radius(pos, 2, function(ix) {
+            if (Math.abs(pos.r - ix.r) + Math.abs(pos.c - ix.c) <= 3) {
+              do_(ix);
             }
           });
     });
@@ -249,30 +268,95 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 	this.cursor_canvas = cursor_canvas;
   this.first_safe = first_safe;
 
-	this.edit_cursor = {...board.cells[0].pos};
+	this.edit_cursor = [[{...board.cells[0].pos}, {...board.cells[0].pos}]];
 
-	this.move_cursor = function(axis, dir) {
-		board.topology.increment_ix(this.edit_cursor, axis, dir);
+	this.move_cursor = function(axis, dir, range) {
+		var loc;
+		if (range) {
+			loc = this.edit_cursor[this.edit_cursor.length - 1][1];
+		} else {
+			loc = this.edit_cursor[this.edit_cursor.length - 1][0];
+		}
+		
+		board.topology.increment_ix(loc, axis, dir);
+		if (!range) {
+			this.edit_cursor = [[loc, {...loc}]];
+		}
 		this.render_cursor();
 	};
 
-	this.set_cell_state = function(num_mines) {
-		var cell = this.board.get_cell(this.edit_cursor);
-
-		cell.flagged = (num_mines == 'flag');
-		if (num_mines == null || num_mines == 'flag') {
-			cell.visible = false;
-		} else {
-			cell.visible = true;
-			cell.state = num_mines;
+	this.in_drag = false;
+	this.cursor_dragstart = function(e) {
+		var pos = {...this.mouse_cell(e)};
+		if (!pos) {
+			return;
 		}
-		
+		if (e.which == 3) {
+			this.manual_move(pos, 'mark-toggle');
+		} else if (e.which == 1) {
+			this.in_drag = true;
+			if (e.shiftKey) {
+				this.edit_cursor[this.edit_cursor.length - 1][1] = pos;
+			} else if (e.ctrlKey) {
+				this.edit_cursor.push([pos, {...pos}]);
+			} else {
+				this.edit_cursor = [[pos, {...pos}]];
+			}
+			this.render_cursor();
+		}
+	}
+
+	this.cursor_dragend = function(e) {
+		this.in_drag = false;
+	}
+	
+	this.cursor_drag = function(e) {
+		if (!this.in_drag) {
+			return;
+		}
+		var pos = this.mouse_cell(e);
+		if (!pos) {
+			return;
+		}
+		this.edit_cursor[this.edit_cursor.length - 1][1] = pos;
+		this.render_cursor();
+	}
+	
+	this.for_cursor = function(do_) {
+		var cells = {}
+		var that = this;
+		$.each(this.edit_cursor, function(i, range) {
+			that.board.topology.for_select_range(range[0], range[1], function(pos) {
+				cells[that.board.get_cell(pos).name] = true;
+			});
+		});
+		this.board.for_each_name(Object.keys(cells), do_);
+	}
+	
+	this.set_cell_state = function(num_mines) {
+		this.for_cursor(function(pos, cell, board) {
+			cell.flagged = (num_mines == 'flag');
+			if (num_mines == null || num_mines == 'flag') {
+				cell.visible = false;
+			} else {
+				cell.visible = true;
+				cell.state = num_mines;
+			}
+		});
+
+		// TODO only if modified
 		this.solve();
 		this.refresh_board();
 	}
 
 	this.incr_cell_state = function(up) {
-		console.log('incr', up);
+		this.for_cursor(function(pos, cell, board) {
+			if (cell.visible) {
+				cell.state = Math.min(Math.max(cell.state + (up ? 1 : -1), 0), this.board.topology.adjacent(cell.pos).length);
+			}
+		});
+
+		// TODO only if modified
 		this.solve();
 		this.refresh_board();
 	}
@@ -368,7 +452,10 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 
 	this.render_cursor = function() {
 		reset_canvas(this.cursor_canvas);
-		board.render_cursor(this.edit_cursor, this.cursor_canvas);
+		var that = this;
+		this.for_cursor(function(pos, cell, board) {
+			board.render_cursor(pos, that.cursor_canvas);
+		});
 	}
 	
   this.manual_move = function(pos, type) {
