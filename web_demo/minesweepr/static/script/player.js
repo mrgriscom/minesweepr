@@ -123,11 +123,8 @@ function registerCursorHandlers() {
 	shortcut.add(' ', function() { GAME.cursor.set_cell_state(0); }, {disable_in_input: true});
 	shortcut.add('m', function() { GAME.cursor.set_cell_state('mine'); }, {disable_in_input: true});
 	shortcut.add('f', function() { GAME.cursor.set_cell_state('flag'); }, {disable_in_input: true});
-	// FIXME
-	shortcut.add('shift+/', function() { GAME.cursor.set_cell_state(null); }, {type: 'keypress', disable_in_input: true});
 	shortcut.add('delete', function() { GAME.cursor.set_cell_state(null); }, {disable_in_input: true});
-	// FIXME
-	shortcut.add('+', function() { GAME.cursor.incr_cell_state(true); }, {type: 'keypress', disable_in_input: true});
+	shortcut.add('shift+plus' /* gross */, function() { GAME.cursor.incr_cell_state(true); }, {type: 'keypress', disable_in_input: true});
 	shortcut.add('=', function() { GAME.cursor.incr_cell_state(true); }, {type: 'keypress', disable_in_input: true});
 	shortcut.add('-', function() { GAME.cursor.incr_cell_state(false); }, {type: 'keypress', disable_in_input: true});
 	
