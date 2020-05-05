@@ -35,8 +35,17 @@ $(document).ready(function() {
 			manual_move(e);
 			return false;
 		});
+		$('#edit_legend').hide();
 	} else {
 		registerCursorHandlers();
+		$('#mines').change(function() {
+			GAME.change_minespec();
+		});
+		$('#firstsafe_opt').css('visibility', 'hidden');
+		$('#showmines_opt').hide();
+		$('#showsol_opt').hide();
+		$('#stepdiv').hide();
+		$('#totalrisk').hide();
 	}
 	
     $('#show_mines').click(function(e) {
@@ -112,6 +121,7 @@ function registerCursorHandlers() {
 		})(i), {disable_in_input: true});
 	}
 	shortcut.add(' ', function() { GAME.cursor.set_cell_state(0); }, {disable_in_input: true});
+	shortcut.add('m', function() { GAME.cursor.set_cell_state('mine'); }, {disable_in_input: true});
 	shortcut.add('f', function() { GAME.cursor.set_cell_state('flag'); }, {disable_in_input: true});
 	// FIXME
 	shortcut.add('shift+/', function() { GAME.cursor.set_cell_state(null); }, {type: 'keypress', disable_in_input: true});
@@ -546,6 +556,29 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     $('#win')[this.status == 'win' ? 'show' : 'hide']();
     $('#fail')[this.status == 'fail' ? 'show' : 'hide']();
   }
+
+	this.change_minespec = function() {
+		// this is only safe to do for boards in analysis mode, since we never actually
+		// allocate and place the mines
+		var minespec = parsemine($('#mines').val(), this.board.topology.num_cells());
+		var changed = false;
+		if (minespec.mode == 'count') {
+			if (this.board.num_mines != minespec.k) {
+				this.board.num_mines = minespec.k;
+				this.board.mine_prob = null;
+				changed = true;
+			}
+		} else if (minespec.mode == 'prob') {
+			if (this.board.mine_prob != minespec.k) {
+				this.board.mine_prob = minespec.k;
+				this.board.num_mines = null;
+				changed = true;
+			}
+		}
+		if (changed) {
+			this.solve();
+		}
+	}
 
   this.game_mode = function() {
     return (this.board.mine_prob ? 'prob' : 'count');
