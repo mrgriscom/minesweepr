@@ -81,6 +81,7 @@ $(document).ready(function() {
   });
 
 function registerCursorHandlers() {
+	// mouse interaction - sets cursor
 	UI_CANVAS.bind('mousedown', function(e) {
 		GAME.cursor.dragstart(e);
 	});
@@ -91,6 +92,19 @@ function registerCursorHandlers() {
 		GAME.cursor.dragend(e);
 	});
 
+	// keyboard interaction - cursor
+	$.each([false, true], function(i, extend_range) {
+		var prefix = (extend_range ? 'shift+' : '');
+		shortcut.add(prefix + 'up', function() { GAME.cursor.step('y', false, extend_range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'down', function() { GAME.cursor.step('y', true, extend_range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'left', function() { GAME.cursor.step('x', false, extend_range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'right', function() { GAME.cursor.step('x', true, extend_range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'page_up', function() { GAME.cursor.step('z', false, extend_range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'page_down', function() { GAME.cursor.step('z', true, extend_range); }, {disable_in_input: true});
+	});
+	shortcut.add('esc', function() { GAME.cursor.clear(); });
+
+	// keyboard interaction - state change
 	for (var i = 0; i < 10; i++) {
 		// closure due to for-loop variable
 		shortcut.add('' + i, (function(x) {
@@ -107,15 +121,6 @@ function registerCursorHandlers() {
 	shortcut.add('=', function() { GAME.cursor.incr_cell_state(true); }, {type: 'keypress', disable_in_input: true});
 	shortcut.add('-', function() { GAME.cursor.incr_cell_state(false); }, {type: 'keypress', disable_in_input: true});
 	
-	$.each([false, true], function(i, range) {
-		var prefix = (range ? 'shift+' : '');
-		shortcut.add(prefix + 'up', function() { GAME.cursor.move('y', false, range); }, {disable_in_input: true});
-		shortcut.add(prefix + 'down', function() { GAME.cursor.move('y', true, range); }, {disable_in_input: true});
-		shortcut.add(prefix + 'left', function() { GAME.cursor.move('x', false, range); }, {disable_in_input: true});
-		shortcut.add(prefix + 'right', function() { GAME.cursor.move('x', true, range); }, {disable_in_input: true});
-		shortcut.add(prefix + 'page_up', function() { GAME.cursor.move('z', false, range); }, {disable_in_input: true});
-		shortcut.add(prefix + 'page_down', function() { GAME.cursor.move('z', true, range); }, {disable_in_input: true});
-	});
 }
 
 function set_defaults() {
@@ -622,29 +627,69 @@ function EditCursor(sess, canvas) {
 	this.selected_cells;
 	this.active_region;
 	this.region_is_negative;
+	// note init() at bottom
 	
-	this.cursor = [[{...this.board.cells[0].pos}, {...this.board.cells[0].pos}]];
-
 	this.clear_cursor = function() {
-		this.s
+		this.selected_cells = {};
+		this.active_region = null;
+	}
+
+	this.default_cursor = function() {
+		this.clear_cursor();
+		this.new_active_region({...this.board.cells[0].pos});
+	}
+
+	this.new_active_region = function(loc) {
+		this.apply_region(this.selected_cells);
+		this.active_region = [loc, {...loc}];
+		this.region_is_negative = Boolean(this.selected_cells[this.key(loc)]);
+	}
+
+	this.extend_active_region = function(loc) {
+		this.active_region[1] = loc;
+	}
+
+	this.apply_region = function(cells) {
+		if (this.active_region == null) {
+			return;
+		}		
+		var that = this;
+		this.board.topology.for_select_range(this.active_region[0], this.active_region[1], function(pos) {
+			if (that.region_is_negative) {
+				delete cells[that.key(pos)];
+			} else {
+				cells[that.key(pos)] = true;
+			}
+		});
+	}
+
+	this.for_cursor = function(do_) {
+		var cells = {}
+		$.each(this.selected_cells, function(k, v) {
+			cells[k] = true;
+		});
+		this.apply_region(cells);
+		this.board.for_each_name(Object.keys(cells), do_);
+	}
+
+	
+	this.clear = function() {
+		this.clear_cursor();
+		this.render();
 	}
 	
-	this.onstatechange = function() {
-		sess.solve();
-		sess.refresh_board();
-	}
-	
-	this.move = function(axis, dir, range) {
-		var loc;
-		if (range) {
-			loc = this.cursor[this.cursor.length - 1][1];
+	this.step = function(axis, dir, extend_range) {
+		if (this.active_region == null) {
+			this.default_cursor();			
 		} else {
-			loc = this.cursor[this.cursor.length - 1][0];
-		}
-		
-		this.board.topology.increment_ix(loc, axis, dir);
-		if (!range) {
-			this.cursor = [[loc, {...loc}]];
+			var loc = {...this.active_region[extend_range ? 1 : 0]};
+			this.board.topology.increment_ix(loc, axis, dir);
+			if (extend_range) {
+				this.extend_active_region(loc);
+			} else {
+				this.clear_cursor();
+				this.new_active_region(loc);
+			}
 		}
 		this.render();
 	};
@@ -653,18 +698,18 @@ function EditCursor(sess, canvas) {
 	this.dragstart = function(e) {
 		var pos = this.mouse_cell(e);
 		if (!pos) {
-			return;
-		}
-		if (e.which == 3) {
+			this.clear();
+		} else if (e.which == 3) {
 			sess.manual_move(pos, 'mark-toggle');
 		} else if (e.which == 1) {
 			this.in_drag = true;
 			if (e.shiftKey) {
-				this.cursor[this.cursor.length - 1][1] = pos;
+				this.extend_active_region(pos);
 			} else if (e.ctrlKey) {
-				this.cursor.push([pos, {...pos}]);
+				this.new_active_region(pos);
 			} else {
-				this.cursor = [[pos, {...pos}]];
+				this.clear_cursor();
+				this.new_active_region(pos);
 			}
 			this.render();
 		}
@@ -682,20 +727,10 @@ function EditCursor(sess, canvas) {
 		if (!pos) {
 			return;
 		}
-		this.cursor[this.cursor.length - 1][1] = pos;
+		this.extend_active_region(pos);
 		this.render();
 	}
-	
-	this.for_cursor = function(do_) {
-		var cells = {}
-		var that = this;
-		$.each(this.cursor, function(i, range) {
-			that.board.topology.for_select_range(range[0], range[1], function(pos) {
-				cells[that.board.get_cell(pos).name] = true;
-			});
-		});
-		this.board.for_each_name(Object.keys(cells), do_);
-	}
+
 	
 	this.set_cell_state = function(num_mines) {
 		this.for_cursor(function(pos, cell, board) {
@@ -723,6 +758,12 @@ function EditCursor(sess, canvas) {
 		this.onstatechange();
 	}
 
+	this.onstatechange = function() {
+		sess.solve();
+		sess.refresh_board();
+	}
+
+	
 	this.render = function() {
 		reset_canvas(this.canvas);
 		var that = this;
@@ -736,6 +777,15 @@ function EditCursor(sess, canvas) {
 		// copy because it will be mutable
 		return (pos != null ? {...pos} : null);
 	}
+
+	this.key = function(loc) {
+		return this.board.get_cell(loc).name;
+	}
+		
+	this.init = function() {
+		this.default_cursor();
+	}
+	this.init();
 }
 
 function Solution(probs) {
