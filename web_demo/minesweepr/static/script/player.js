@@ -282,7 +282,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 	this.canvas = canvas;
 	this.solution_canvas = solution_canvas;
   this.first_safe = first_safe;
-	this.cursor = new EditCursor(this, cursor_canvas);
+	this.cursor = (ANAL ? new EditCursor(this, cursor_canvas) : null);
 	
   this.start = function() {
     this.seq = next_seq();
@@ -306,7 +306,10 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
       this.solve();
     }
     this.refresh_board();
-
+	  if (this.cursor) {
+		  this.cursor.render();
+	  }
+	  
     push_state();
   }
 
