@@ -31,7 +31,7 @@ function prob_shade (p, best) {
 
 
 
-function Board (topology) {
+function Board (topology, for_analysis_only) {
   this.topology = topology;
   this.cells = [];
   this.cells_by_name = {};
@@ -47,19 +47,17 @@ function Board (topology) {
   }
 
   this.init = function (mine_dist) {
-      for (var i = 0; i < this.topology.num_cells(); i++) {
-      this.cells.push(new Cell(null, 0, false, false));
+      for (var i = 0; i < mine_dist.length; i++) {
+      this.cells.push(new Cell(null, mine_dist[i] && !for_analysis_only ? 'mine' : null, false, false));
     }
     this.for_each_cell(function (pos, cell, board) {
         cell.pos = pos;      
         cell.name = board.topology.cell_name(pos);
         board.cells_by_name[cell.name] = cell;
     });
-	  /*
     this.for_each_cell(function (pos, cell, board) {
         board.init_cell_state(pos, cell);
       });
-*/
   }
 
   //reshuffle board so 'pos' will not be a mine
@@ -120,10 +118,10 @@ function Board (topology) {
         if (cell.state == 'mine') {
           return false;
         } else {
-          if (cell.state == 0) {
+          if (cell.state == 0 && !for_analysis_only) {
             board.for_each_neighbor(pos, function (pos, neighb, board) {
               // would recurse here, but add to queue instead
-              //cascades.push(pos);
+              cascades.push(pos);
             });
           }
           return true;
@@ -217,8 +215,7 @@ function Board (topology) {
   }
 
   //return whether the board has been fully cleared. 'strict' mode requires all mines to be flagged
-	this.is_complete = function (strict) {
-		return false;
+  this.is_complete = function (strict) {
     var complete = true;
     this.for_each_cell(function (pos, cell, board) {
         if (cell.state == 'mine') {

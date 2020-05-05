@@ -1,4 +1,7 @@
 
+ANAL = true;
+//ANAL = false;
+
 $(document).ready(function() {
     warm_api();
     init_legend();
@@ -24,24 +27,17 @@ $(document).ready(function() {
         return false;
       });
 
-	/*
-    UI_CANVAS.bind('mouseup', function(e) {
-        manual_move(e);
-        return false;
-      });
-*/
     UI_CANVAS.bind('contextmenu', function(e) {
         return false;
-      });
-	UI_CANVAS.bind('mousedown', function(e) {
-		GAME.cursor_dragstart(e);
-	});
-	UI_CANVAS.bind('mousemove', function(e) {
-		GAME.cursor_drag(e);
-	});
-	$(window).bind('mouseup', function(e) {
-		GAME.cursor_dragend(e);
-	});
+    });
+	if (!ANAL) {
+		UI_CANVAS.bind('mouseup', function(e) {
+			manual_move(e);
+			return false;
+		});
+	} else {
+		registerCursorHandlers();
+	}
 	
     $('#show_mines').click(function(e) {
         GAME.refresh_board();
@@ -73,46 +69,61 @@ $(document).ready(function() {
     $('#inconsistent').hide();
     set_spinner(null);
 
-    shortcut.add('enter', function() { GAME.best_move(); });
+	if (!ANAL) {
+		shortcut.add('enter', function() { GAME.best_move(); });
+	}
     shortcut.add('ctrl+enter', new_game);
     shortcut.add('ctrl+z', undo);
     shortcut.add('ctrl+left', undo);
 
-	for (var i = 0; i < 10; i++) {
-		shortcut.add('' + i, (function(x) {
-			return function() { GAME.set_cell_state(x); }
-		})(i), {disable_in_input: true});
-	}
-	shortcut.add(' ', function() { GAME.set_cell_state(0); }, {disable_in_input: true});
-	shortcut.add('f', function() { GAME.set_cell_state('flag'); }, {disable_in_input: true});
-	// FIXME
-	shortcut.add('shift+/', function() { GAME.set_cell_state(null); }, {type: 'keypress', disable_in_input: true});
-	shortcut.add('delete', function() { GAME.set_cell_state(null); }, {disable_in_input: true});
-	// FIXME
-	shortcut.add('+', function() { GAME.incr_cell_state(true); }, {type: 'keypress', disable_in_input: true});
-	shortcut.add('=', function() { GAME.incr_cell_state(true); }, {type: 'keypress', disable_in_input: true});
-	shortcut.add('-', function() { GAME.incr_cell_state(false); }, {type: 'keypress', disable_in_input: true});
-
-	$.each([false, true], function(i, range) {
-		var prefix = (range ? 'shift+' : '');
-		shortcut.add(prefix + 'up', function() { GAME.move_cursor('y', false, range); }, {disable_in_input: true});
-		shortcut.add(prefix + 'down', function() { GAME.move_cursor('y', true, range); }, {disable_in_input: true});
-		shortcut.add(prefix + 'left', function() { GAME.move_cursor('x', false, range); }, {disable_in_input: true});
-		shortcut.add(prefix + 'right', function() { GAME.move_cursor('x', true, range); }, {disable_in_input: true});
-		shortcut.add(prefix + 'page_up', function() { GAME.move_cursor('z', false, range); }, {disable_in_input: true});
-		shortcut.add(prefix + 'page_down', function() { GAME.move_cursor('z', true, range); }, {disable_in_input: true});
-	});
-		
     set_defaults();
     new_game();
   });
+
+function registerCursorHandlers() {
+	UI_CANVAS.bind('mousedown', function(e) {
+		GAME.cursor.dragstart(e);
+	});
+	UI_CANVAS.bind('mousemove', function(e) {
+		GAME.cursor.drag(e);
+	});
+	$(window).bind('mouseup', function(e) {
+		GAME.cursor.dragend(e);
+	});
+
+	for (var i = 0; i < 10; i++) {
+		// closure due to for-loop variable
+		shortcut.add('' + i, (function(x) {
+				return function() { GAME.cursor.set_cell_state(x); }
+		})(i), {disable_in_input: true});
+	}
+	shortcut.add(' ', function() { GAME.cursor.set_cell_state(0); }, {disable_in_input: true});
+	shortcut.add('f', function() { GAME.cursor.set_cell_state('flag'); }, {disable_in_input: true});
+	// FIXME
+	shortcut.add('shift+/', function() { GAME.cursor.set_cell_state(null); }, {type: 'keypress', disable_in_input: true});
+	shortcut.add('delete', function() { GAME.cursor.set_cell_state(null); }, {disable_in_input: true});
+	// FIXME
+	shortcut.add('+', function() { GAME.cursor.incr_cell_state(true); }, {type: 'keypress', disable_in_input: true});
+	shortcut.add('=', function() { GAME.cursor.incr_cell_state(true); }, {type: 'keypress', disable_in_input: true});
+	shortcut.add('-', function() { GAME.cursor.incr_cell_state(false); }, {type: 'keypress', disable_in_input: true});
+	
+	$.each([false, true], function(i, range) {
+		var prefix = (range ? 'shift+' : '');
+		shortcut.add(prefix + 'up', function() { GAME.cursor.move('y', false, range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'down', function() { GAME.cursor.move('y', true, range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'left', function() { GAME.cursor.move('x', false, range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'right', function() { GAME.cursor.move('x', true, range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'page_up', function() { GAME.cursor.move('z', false, range); }, {disable_in_input: true});
+		shortcut.add(prefix + 'page_down', function() { GAME.cursor.move('z', true, range); }, {disable_in_input: true});
+	});
+}
 
 function set_defaults() {
   cached_dimensions = {_2d: [30, 16, null, 99], _3d: [6, 10, 8, 80]};
   active_dimension = null;
 
   selectChoice($('input[name="topo"][value="grid"]'));
-	selectChoice($('#first_safe'), false);
+	selectChoice($('#first_safe'), !ANAL);
   selectChoice($('#play_auto'));
   selectChoice($('#play_manual'));
   selectChoice($('#show_mines'), false);
@@ -240,7 +251,7 @@ function new_topo(type, w, h, d) {
 }
 
 function new_board(topo, minespec) {
-	board = new Board(topo);
+	board = new Board(topo, ANAL);
 	board[{'count': 'populate_n', 'prob': 'populate_p'}[minespec.mode]](minespec.k);
 	return board;
 }
@@ -265,101 +276,8 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
   this.board = board;
 	this.canvas = canvas;
 	this.solution_canvas = solution_canvas;
-	this.cursor_canvas = cursor_canvas;
   this.first_safe = first_safe;
-
-	this.edit_cursor = [[{...board.cells[0].pos}, {...board.cells[0].pos}]];
-
-	this.move_cursor = function(axis, dir, range) {
-		var loc;
-		if (range) {
-			loc = this.edit_cursor[this.edit_cursor.length - 1][1];
-		} else {
-			loc = this.edit_cursor[this.edit_cursor.length - 1][0];
-		}
-		
-		board.topology.increment_ix(loc, axis, dir);
-		if (!range) {
-			this.edit_cursor = [[loc, {...loc}]];
-		}
-		this.render_cursor();
-	};
-
-	this.in_drag = false;
-	this.cursor_dragstart = function(e) {
-		var pos = {...this.mouse_cell(e)};
-		if (!pos) {
-			return;
-		}
-		if (e.which == 3) {
-			this.manual_move(pos, 'mark-toggle');
-		} else if (e.which == 1) {
-			this.in_drag = true;
-			if (e.shiftKey) {
-				this.edit_cursor[this.edit_cursor.length - 1][1] = pos;
-			} else if (e.ctrlKey) {
-				this.edit_cursor.push([pos, {...pos}]);
-			} else {
-				this.edit_cursor = [[pos, {...pos}]];
-			}
-			this.render_cursor();
-		}
-	}
-
-	this.cursor_dragend = function(e) {
-		this.in_drag = false;
-	}
-	
-	this.cursor_drag = function(e) {
-		if (!this.in_drag) {
-			return;
-		}
-		var pos = this.mouse_cell(e);
-		if (!pos) {
-			return;
-		}
-		this.edit_cursor[this.edit_cursor.length - 1][1] = pos;
-		this.render_cursor();
-	}
-	
-	this.for_cursor = function(do_) {
-		var cells = {}
-		var that = this;
-		$.each(this.edit_cursor, function(i, range) {
-			that.board.topology.for_select_range(range[0], range[1], function(pos) {
-				cells[that.board.get_cell(pos).name] = true;
-			});
-		});
-		this.board.for_each_name(Object.keys(cells), do_);
-	}
-	
-	this.set_cell_state = function(num_mines) {
-		this.for_cursor(function(pos, cell, board) {
-			cell.flagged = (num_mines == 'flag');
-			if (num_mines == null || num_mines == 'flag') {
-				cell.visible = false;
-			} else {
-				cell.visible = true;
-				cell.state = num_mines;
-			}
-		});
-
-		// TODO only if modified
-		this.solve();
-		this.refresh_board();
-	}
-
-	this.incr_cell_state = function(up) {
-		this.for_cursor(function(pos, cell, board) {
-			if (cell.visible) {
-				cell.state = Math.min(Math.max(cell.state + (up ? 1 : -1), 0), this.board.topology.adjacent(cell.pos).length);
-			}
-		});
-
-		// TODO only if modified
-		this.solve();
-		this.refresh_board();
-	}
+	this.cursor = new EditCursor(this, cursor_canvas);
 	
   this.start = function() {
     this.seq = next_seq();
@@ -412,7 +330,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
           game.refresh_solution();
         }
       }, function(board) {
-          return board.game_state([], true);
+          return ANAL ? board.game_state([], true) : board.game_state(game.known_mines);
       });
   }
 
@@ -450,14 +368,6 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 		}
 	}
 
-	this.render_cursor = function() {
-		reset_canvas(this.cursor_canvas);
-		var that = this;
-		this.for_cursor(function(pos, cell, board) {
-			board.render_cursor(pos, that.cursor_canvas);
-		});
-	}
-	
   this.manual_move = function(pos, type) {
     if (!get_setting('play_manual')) {
       return;
@@ -534,11 +444,14 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     var survived = (result || !changed);
 
     if (!survived) {
-      this.status = 'fail';
+		this.status = 'fail';
     } else if (this.board.is_complete(strict_completeness)) {
       // must check even on not 'changed', as flagging alone can trigger completeness in certain situations
-      this.status = 'win';
+		this.status = 'win';
     }
+	  if (this.status != 'in_play') {
+		  reset_canvas(this.solution_canvas);
+	  }
 
     if (changed) {
       this.update_risk(uncovered_cells);
@@ -635,7 +548,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
   }
 
   this.show_solution = function() {
-    return get_setting('show_sol') && this.display_solution && this.status == 'in_play';
+      return get_setting('show_sol') && this.display_solution;
   }
 
   this.first_safety = function() {
@@ -701,6 +614,128 @@ function warm_api() {
   solve_query(null, SOLVER_URL, function(){}, function(b) {
     return {rules: [], total_cells: 0, total_mines:0}
   });
+}
+
+function EditCursor(sess, canvas) {
+	this.board = sess.board;
+	this.canvas = canvas;
+	this.selected_cells;
+	this.active_region;
+	this.region_is_negative;
+	
+	this.cursor = [[{...this.board.cells[0].pos}, {...this.board.cells[0].pos}]];
+
+	this.clear_cursor = function() {
+		this.s
+	}
+	
+	this.onstatechange = function() {
+		sess.solve();
+		sess.refresh_board();
+	}
+	
+	this.move = function(axis, dir, range) {
+		var loc;
+		if (range) {
+			loc = this.cursor[this.cursor.length - 1][1];
+		} else {
+			loc = this.cursor[this.cursor.length - 1][0];
+		}
+		
+		this.board.topology.increment_ix(loc, axis, dir);
+		if (!range) {
+			this.cursor = [[loc, {...loc}]];
+		}
+		this.render();
+	};
+
+	this.in_drag = false;
+	this.dragstart = function(e) {
+		var pos = this.mouse_cell(e);
+		if (!pos) {
+			return;
+		}
+		if (e.which == 3) {
+			sess.manual_move(pos, 'mark-toggle');
+		} else if (e.which == 1) {
+			this.in_drag = true;
+			if (e.shiftKey) {
+				this.cursor[this.cursor.length - 1][1] = pos;
+			} else if (e.ctrlKey) {
+				this.cursor.push([pos, {...pos}]);
+			} else {
+				this.cursor = [[pos, {...pos}]];
+			}
+			this.render();
+		}
+	}
+
+	this.dragend = function(e) {
+		this.in_drag = false;
+	}
+	
+	this.drag = function(e) {
+		if (!this.in_drag) {
+			return;
+		}
+		var pos = this.mouse_cell(e);
+		if (!pos) {
+			return;
+		}
+		this.cursor[this.cursor.length - 1][1] = pos;
+		this.render();
+	}
+	
+	this.for_cursor = function(do_) {
+		var cells = {}
+		var that = this;
+		$.each(this.cursor, function(i, range) {
+			that.board.topology.for_select_range(range[0], range[1], function(pos) {
+				cells[that.board.get_cell(pos).name] = true;
+			});
+		});
+		this.board.for_each_name(Object.keys(cells), do_);
+	}
+	
+	this.set_cell_state = function(num_mines) {
+		this.for_cursor(function(pos, cell, board) {
+			cell.flagged = (num_mines == 'flag');
+			if (num_mines == null || num_mines == 'flag') {
+				cell.visible = false;
+			} else {
+				cell.visible = true;
+				cell.state = num_mines;
+			}
+		});
+
+		// TODO only if modified
+		this.onstatechange();
+	}
+
+	this.incr_cell_state = function(up) {
+		this.for_cursor(function(pos, cell, board) {
+			if (cell.visible) {
+				cell.state = Math.min(Math.max(cell.state + (up ? 1 : -1), 0), board.topology.adjacent(cell.pos).length);
+			}
+		});
+
+		// TODO only if modified
+		this.onstatechange();
+	}
+
+	this.render = function() {
+		reset_canvas(this.canvas);
+		var that = this;
+		this.for_cursor(function(pos, cell, board) {
+			board.render_cursor(pos, that.canvas);
+		});
+	}
+
+	this.mouse_cell = function(e) {
+		var pos = sess.mouse_cell(e);
+		// copy because it will be mutable
+		return (pos != null ? {...pos} : null);
+	}
 }
 
 function Solution(probs) {
