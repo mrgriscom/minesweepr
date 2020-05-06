@@ -6,8 +6,8 @@ dynurls = patterns('minesweepr.views',
 )
 
 staticurls = patterns('minesweepr.views',
-    (r'^player/$', 'template_static'),
-    (r'^query/$', 'template_static'),
+    (r'^player/$', 'template_static', {'analyzer_mode': False}),
+    (r'^analyzer/$', 'template_static', {'analyzer_mode': True}),
 )
 
 urlpatterns = patterns('',

@@ -43,8 +43,8 @@ def log_result(payload, result, rtt):
     logging.info('%d rules %d cells %.1f avg cpr; solved in %s, task queue rtt %.3f' %
                  (num_rules, num_uniq_cells, avg_cells_per_rule, solved_in, rtt))
 
-def template_static(request):
+def template_static(request, **kwargs):
     url = request.path[1:-1]
     assert url.startswith(settings.BASE_STATIC_URL)
     template = url[len(settings.BASE_STATIC_URL):] + '.html'
-    return render_to_response(template, {}, context_instance=RequestContext(request))
+    return render_to_response(template, dict((k, json.dumps(v)) for k, v in kwargs.iteritems()), context_instance=RequestContext(request))

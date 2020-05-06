@@ -1,7 +1,5 @@
 
-ANAL = true;
-//ANAL = false;
-
+ANALYZER = false;
 ANALYSIS_SOLVE_TIMEOUT = 330;  // ms
 
 $(document).ready(function() {
@@ -32,7 +30,7 @@ $(document).ready(function() {
     UI_CANVAS.bind('contextmenu', function(e) {
         return false;
     });
-	if (!ANAL) {
+	if (!ANALYZER) {
 		UI_CANVAS.bind('mouseup', function(e) {
 			manual_move(e);
 			return false;
@@ -80,7 +78,7 @@ $(document).ready(function() {
     $('#inconsistent').hide();
     set_spinner(null);
 
-	if (!ANAL) {
+	if (!ANALYZER) {
 		shortcut.add('enter', function() { GAME.best_move(); });
 	}
     shortcut.add('ctrl+enter', new_game);
@@ -137,7 +135,7 @@ function set_defaults() {
   active_dimension = null;
 
   selectChoice($('input[name="topo"][value="grid"]'));
-	selectChoice($('#first_safe'), !ANAL);
+	selectChoice($('#first_safe'), !ANALYZER);
   selectChoice($('#play_auto'));
   selectChoice($('#play_manual'));
   selectChoice($('#show_mines'), false);
@@ -280,7 +278,7 @@ function new_topo(type, w, h, d) {
 }
 
 function new_board(topo, minespec) {
-	board = new Board(topo, ANAL);
+	board = new Board(topo, ANALYZER);
 	board[{'count': 'populate_n', 'prob': 'populate_p'}[minespec.mode]](minespec.k);
 	return board;
 }
@@ -306,7 +304,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 	this.canvas = canvas;
 	this.solution_canvas = solution_canvas;
   this.first_safe = first_safe;
-	this.cursor = (ANAL ? new EditCursor(this, cursor_canvas) : null);
+	this.cursor = (ANALYZER ? new EditCursor(this, cursor_canvas) : null);
 	
   this.start = function() {
     this.seq = next_seq();
@@ -338,7 +336,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
   }
 
 	this.refresh_board = function() {
-		if (!ANAL) {
+		if (!ANALYZER) {
 			this.update_info();
 		}
 		this.render_board();
@@ -348,7 +346,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     this.render_solution();
     TOOLTIP_UPDATE();
 	  $('#inconsistent')[this.show_solution() && this.display_solution.inconsistent ? 'show' : 'hide']();
-	  if (ANAL) {
+	  if (ANALYZER) {
 		  this.update_minecount_analysis_mode();
 	  }
   }
@@ -367,7 +365,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
           game.refresh_solution();
         }
       }, function(board) {
-          return ANAL ? board.game_state([], true) : board.game_state(game.known_mines);
+          return ANALYZER ? board.game_state([], true) : board.game_state(game.known_mines);
       });
   }
 
@@ -686,7 +684,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
       this.refresh_board();
 	  this.refresh_solution();
 
-	  if (ANAL) {
+	  if (ANALYZER) {
 		  // analysis mode can change # of mines in board, and this is the only place
 		  // that info is shown
 		  writeminespec(this.board);

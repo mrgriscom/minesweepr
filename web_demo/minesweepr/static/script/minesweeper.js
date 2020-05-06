@@ -114,7 +114,7 @@ function Board (topology, for_analysis_only) {
         if (cell.state == 'mine') {
           return false;
         } else {
-          if (cell.state == 0 && !for_analysis_only) {
+          if (cell.state == 0) {
             board.for_each_neighbor(pos, function (pos, neighb, board) {
               // would recurse here, but add to queue instead
               cascades.push(pos);
