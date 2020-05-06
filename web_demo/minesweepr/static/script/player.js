@@ -435,8 +435,15 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     }
 
     var game = this;
-    var solu = this.solution;
-    this.action(function(uncovered) {
+      var solu = this.solution;
+
+	  // abort early if nothing to be done
+	  // this fixes some weirdness in chrome trying to auto-play on large boards
+	  if (solu == null && !game.first_safety()) {
+		  return;
+	  }
+	  
+      this.action(function(uncovered) {
         var action = false; 
         var survived = true;
 
