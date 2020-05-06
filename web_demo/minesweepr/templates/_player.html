@@ -204,6 +204,39 @@ td {
   <tr>
   <td style="vertical-align: bottom;">
 
+	<style>
+	  dl {
+	    display: block;
+	    overflow: hidden;
+	  }
+
+	  dt {
+        float: left;
+        clear: both;
+        width: 5em;
+        text-align: right;
+	    padding-right: 0.2em;
+	    font-weight: bold;
+	    white-space: nowrap;
+	  }
+
+	  dd {
+        float: left;
+        margin-left: 0.6em;
+	  }
+	</style>
+	<dl id="edit_legend" class="help" style="font-size: 80%; margin-bottom: .5em;">
+	  <dt>&#x2194;&#x2195;</dt><dd>navigate</dd>
+	  <dt>pgup/dn</dt><dd>navigate Z dimension</dd>
+	  <dt>del</dt><dd>set as covered</dd>
+	  <dt>spc</dt><dd>set as blank</dd>
+	  <dt>0&ndash;9</dt><dd>set cell count</dd>
+	  <dt>+/&ndash;</dt><dd>incr/decr cell count</dd>
+	  <dt>f</dt><dd>flag cell</dd>
+	  <dt>m</dt><dd>force mine</dd>
+	  <dt>esc</dt><dd>hide cursor</dd>
+	</dl>
+	
   <div id="stepdiv" style="text-align: right;"><span class="help">(enter)</span>&nbsp;<a id="step" href="#"><b>best move</b></a></div>
   <div id="undodiv" style="text-align: right;"><span class="help">(ctrl+z)</span>&nbsp;<nobr><a id="undo" href="#"><b>undo</b></a></nobr></div>
   
@@ -229,38 +262,6 @@ td {
 
   </td>
   <td valign="bottom">
-	<style>
-	  dl {
-	  display: block;
-	  overflow: hidden;
-	  }
-
-	  dt {
-        float: left;
-        clear: both;
-        width: 5em;
-        text-align: right;
-	    padding-right: 0.2em;
-	    font-weight: bold;
-	    white-space: nowrap;
-	  }
-
-	  dd {
-        float: left;
-        margin-left: 0.6em;
-	  }
-	</style>
-	<dl id="edit_legend" class="help" style="font-size: 80%; margin-bottom: .8em;">
-	  <dt>&#x2194;&#x2195;</dt><dd>navigate</dd>
-	  <dt>pgup/dn</dt><dd>navigate Z dimension</dd>
-	  <dt>del</dt><dd>set as covered</dd>
-	  <dt>spc</dt><dd>set as blank</dd>
-	  <dt>0&ndash;9</dt><dd>set cell count</dd>
-	  <dt>+/&ndash;</dt><dd>incr/decr cell count</dd>
-	  <dt>f</dt><dd>flag cell</dd>
-	  <dt>m</dt><dd>force mine</dd>
-	  <dt>esc</dt><dd>hide cursor</dd>
-	</dl>
     <table id="legend" border="0" cellspacing="0">
       <tr>
         <td id="clear" rowspan="2" valign="middle">SAFE</td>

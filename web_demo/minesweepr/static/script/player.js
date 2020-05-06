@@ -337,15 +337,20 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     push_state();
   }
 
-  this.refresh_board = function() {
-    this.update_info();
-    this.render_board();
-  }
+	this.refresh_board = function() {
+		if (!ANAL) {
+			this.update_info();
+		}
+		this.render_board();
+	}
 
   this.refresh_solution = function() {
     this.render_solution();
     TOOLTIP_UPDATE();
 	  $('#inconsistent')[this.show_solution() && this.display_solution.inconsistent ? 'show' : 'hide']();
+	  if (ANAL) {
+		  this.update_minecount_analysis_mode();
+	  }
   }
 
   this.solve = function() {
@@ -418,7 +423,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
           return game.board.uncover_neighbors(pos, uncovered);
         } else if (type == 'mark-toggle') {
 			game.board.flag(pos, 'toggle');
-			game.render_solution();
+			game.refresh_solution();
           return null;
         }
       });
@@ -572,6 +577,29 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     $('#fail')[this.status == 'fail' ? 'show' : 'hide']();
   }
 
+	this.update_minecount_analysis_mode = function() {
+		if (this.game_mode() == 'count') {
+			s = this.board.num_mines;
+			mc = this.board.mine_counts();
+			s -= (mc.flagged + mc.flag_error); // count all flags -- all should be error bc we don't actually set mines
+
+			var nonflagged_mines = 0;
+			if (this.show_solution()) {
+				this.display_solution.each(this.board, function(pos, cell, prob, board) {
+					if (prob > 1. - EPSILON && !cell.flagged) {
+						nonflagged_mines++;
+					}
+				});
+			}
+			s -= nonflagged_mines;
+
+			$('#num_mines').css('color', s < 0 ? 'red' : '');
+		} else {
+			s = '??';
+		}
+		$('#num_mines').html(s);
+	}
+	
 	this.change_minespec = function() {
 		// this is only safe to do for boards in analysis mode, since we never actually
 		// allocate and place the mines
@@ -817,7 +845,7 @@ function EditCursor(sess, canvas) {
 		}
 		if (flags_changed) {
 			sess.refresh_board();
-			sess.render_solution();
+			sess.refresh_solution();
 		}
 	}
 
