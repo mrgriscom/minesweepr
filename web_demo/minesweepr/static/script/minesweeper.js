@@ -84,20 +84,16 @@ function Board (topology, for_analysis_only) {
     }
   }
 
-  this.init_cell_state = function(pos, cell) {
-    if (cell.state != 'mine') {
-      var neighboring_mines = [];
-      this.for_each_neighbor(pos, function (pos, neighb, board) {
-          if (neighb.state == 'mine') {
-            // neighbor list may contain duplicates due to wraparound topologies
-            if (neighboring_mines.indexOf(neighb.name) == -1) {
-              neighboring_mines.push(neighb.name);
-            }
-          }
-        });
-      cell.state = neighboring_mines.length;
-    }
-  }
+	this.init_cell_state = function(pos, cell) {
+		if (cell.state != 'mine') {
+			cell.state = 0;
+			this.for_each_neighbor(pos, function (pos, neighb, board) {
+				if (neighb.state == 'mine') {
+					cell.state++;
+				}
+			});
+		}
+	}
 
   var cascade_overrides_flagged = false;
   //uncover a cell, triggering any cascades
@@ -264,13 +260,34 @@ function Board (topology, for_analysis_only) {
 		});
   }
 
-  this.for_each_neighbor = function (pos, func) {
-    var adj = this.topology.adjacent(pos);
-    for (var i = 0; i < adj.length; i++) {
-      var neighb_pos = adj[i];
-      func(neighb_pos, this.get_cell(neighb_pos), this);
-    }
-  }
+	// topo.adjacent() can return redundant neighbors, in order to keep its logic simpler
+	// it's safer and easier to detect here as a catch-all
+	this.for_each_neighbor = function (pos, func) {
+		var cell = this.get_cell(pos);
+		if (cell._deduped_neighbors) {
+			var adj = cell._deduped_neighbors;
+		} else {
+			var adj = this.topology.adjacent(pos);
+			if (cell._deduped_neighbors == null) {
+				var uniq = {};
+				for (var i = 0; i < adj.length; i++) {
+					uniq[this.topology.cell_ix(adj[i])] = adj[i];
+				}
+				uniq = Object.values(uniq);
+				if (uniq.length != adj.length) {
+					cell._deduped_neighbors = uniq;
+					adj = cell._deduped_neighbors;
+				} else {
+					cell._deduped_neighbors = false;
+				}
+			}
+		}
+		
+		for (var i = 0; i < adj.length; i++) {
+			var neighb_pos = adj[i];
+			func(neighb_pos, this.get_cell(neighb_pos), this);
+		}
+	}
 
   this.for_each_name = function (names, func) {
     var board = this;
@@ -448,6 +465,10 @@ function Cell (name, state, visible, flagged) {
   this.visible = visible;
   this.flagged = flagged;
 
+	// cache if this cell's neighbors differ from those returned by adjacent() due to
+	// deduplication. if yes, list of neighbors; if no, false; if not yet cached, null
+	this._deduped_neighbors;
+	
 	this.render = function (g, ctx, params) {
 		ctx.beginPath();
 		g.path(ctx);
