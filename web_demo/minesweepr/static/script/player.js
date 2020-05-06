@@ -2,6 +2,8 @@
 ANAL = true;
 //ANAL = false;
 
+ANALYSIS_SOLVE_TIMEOUT = 330;  // ms
+
 $(document).ready(function() {
     warm_api();
     init_legend();
@@ -212,6 +214,21 @@ function swapmineformat() {
 	}
 }
 
+function writeminespec(board) {
+	if (board.mine_prob) {
+		$('#mines').val(board.mine_prob);
+	} else {
+		var curstr = $('#mines').val();
+		var cur_fmt_is_pct = curstr[curstr.length - 1] == '%';
+		var mines = board.num_mines;
+		if (cur_fmt_is_pct) {
+			var k = 100. * mines / board.topology.num_cells();
+			mines = +(k.toFixed(3)) + '%';
+		}
+		$('#mines').val(mines);
+	}
+}
+
 function get_topo() {
 	var topo_type = $('input[name="topo"]:checked').val();
 	var width = +$('#width').val();
@@ -400,7 +417,8 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
         } else if (type == 'sweep-all') {
           return game.board.uncover_neighbors(pos, uncovered);
         } else if (type == 'mark-toggle') {
-          game.board.flag(pos, 'toggle');
+			game.board.flag(pos, 'toggle');
+			game.render_solution();
           return null;
         }
       });
@@ -573,7 +591,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 			}
 		}
 		if (changed) {
-			this.solve();
+			this.cursor.commit_board_change();
 		}
 	}
 
@@ -615,7 +633,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
       risk: this.total_risk,
       first: this.first_move,
       board_state: this.board.snapshot(),
-      known_mines: this.known_mines.slice(0),
+		known_mines: this.known_mines.slice(0),
     };
   }
 
@@ -632,6 +650,12 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 
       this.refresh_board();
 	  this.refresh_solution();
+
+	  if (ANAL) {
+		  // analysis mode can change # of mines in board, and this is the only place
+		  // that info is shown
+		  writeminespec(this.board);
+	  }
   }
 }
 
@@ -660,6 +684,7 @@ function EditCursor(sess, canvas) {
 	this.selected_cells;
 	this.active_region;
 	this.region_is_negative;
+	this.timer;
 	// note init() at bottom
 	
 	this.clear_cursor = function() {
@@ -766,7 +791,11 @@ function EditCursor(sess, canvas) {
 
 	
 	this.set_cell_state = function(num_mines) {
+		var changed = false;
+		var flags_changed = false;
 		this.for_cursor(function(pos, cell, board) {
+			var orig = {...cell};
+
 			cell.flagged = (num_mines == 'flag');
 			if (num_mines == null || num_mines == 'flag') {
 				cell.visible = false;
@@ -774,26 +803,54 @@ function EditCursor(sess, canvas) {
 				cell.visible = true;
 				cell.state = num_mines;
 			}
-		});
 
-		// TODO only if modified
-		this.onstatechange();
-	}
-
-	this.incr_cell_state = function(up) {
-		this.for_cursor(function(pos, cell, board) {
-			if (cell.visible) {
-				cell.state = Math.min(Math.max(cell.state + (up ? 1 : -1), 0), board.topology.adjacent(cell.pos).length);
+			if (orig.visible != cell.visible || orig.state != cell.state) {
+				changed = true;
+			}
+			if (orig.flagged != cell.flagged) {
+				flags_changed = true;
 			}
 		});
 
-		// TODO only if modified
-		this.onstatechange();
+		if (changed) {
+			this.onstatechange();
+		}
+		if (flags_changed) {
+			sess.refresh_board();
+			sess.render_solution();
+		}
+	}
+
+	this.incr_cell_state = function(up) {
+		var changed = false;
+		this.for_cursor(function(pos, cell, board) {
+			if (cell.visible) {
+				var old_state = cell.state;
+				cell.state = Math.min(Math.max(cell.state + (up ? 1 : -1), 0), board.topology.adjacent(cell.pos).length);
+				if (cell.state != old_state) {
+					changed = true;
+				}
+			}
+		});
+
+		if (changed) {
+			this.onstatechange();
+		}
 	}
 
 	this.onstatechange = function() {
-		sess.solve();
+		clearTimeout(this.timer);
+		var that = this;
+		this.timer = setTimeout(function() {
+			that.commit_board_change();
+		}, ANALYSIS_SOLVE_TIMEOUT);
 		sess.refresh_board();
+	}
+
+	this.commit_board_change = function() {
+		sess.seq = next_seq();
+		push_state();
+		sess.solve();
 	}
 
 	

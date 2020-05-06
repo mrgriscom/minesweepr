@@ -280,37 +280,51 @@ function Board (topology, for_analysis_only) {
       });
   }
 
-	this.game_state = function (known_mines, everything_mode) {
+	// TODO harmonize with python algo? remove 'trust_flags' support now that we can have uncovered mines for analysis?
+  this.game_state = function (known_mines, everything_mode) {
     // known_mines is a list of cell (names) actually known to be mines. if null, flagged cells
     // will be considered mines. this is 'trust flags' mode
 
+	// to keep honest we never actually check a cell's 'mine' flag. one exception is setting explicit
+	// mines in analysis mode; it's ok to check these because the cell is visible; a visible mine
+	// in normal gameplay mode indicates a lost game
+		
     // note: this app is not equipped to render solutions from 'everything' or 'trust flags' mode
     // 'trust flags' mode will also cause the solver to report inconsistent game states if cells
     // are flagged incorrectly
-
+	// TODO is this still true?
+		
     var rules = [];
     var clear_cells = {};
     var zero_cells = {};
-    var relevant_mines = {};
+	var relevant_mines = {};
     var num_known_mines = 0;
 
     // ensure cell_names is not modified later!
-    var mk_rule = function(num_mines, cell_names) {
-      return {num_mines: num_mines, cells: cell_names};
+	var mk_rule = function(num_mines, cell_names) {
+		return {num_mines: num_mines, cells: cell_names};
     }
 
-    var add_cell = function(set, cell) {
+	var add_cell = function(set, cell) {
       set[cell.name] = cell;
     }
 
-    var is_mine = (function() {
+	var is_mine = (function() {
         var is_known = in_set(known_mines || []);
         return function(cell) {
           var trust_flags = (known_mines == null);
-          return (trust_flags ? cell.flagged : is_known(cell.name));
+			return (trust_flags ? cell.flagged : is_known(cell.name)) ||
+				// exposed mines in analysis mode
+				(cell.visible && cell.state == 'mine');
         };
-      })();
+    })();
 
+	var potential_mine = function(cell) {
+		return !cell.visible ||
+			// exposed mines in analysis mode
+			cell.state == 'mine';
+	}
+		
     this.for_each_cell(function (pos, cell, board) {
         if (is_mine(cell)) {
           num_known_mines += 1;
@@ -324,7 +338,7 @@ function Board (topology, for_analysis_only) {
           var mines_of_interest = [];
           var on_frontier = false;
           board.for_each_neighbor(pos, function (pos, neighbor, board) {
-              if (!neighbor.visible) { //includes flagged mines
+              if (potential_mine(neighbor)) { //includes flagged mines
                 cellnames_of_interest.push(neighbor.name);
                 if (is_mine(neighbor)) {
                   mines_of_interest.push(neighbor);
@@ -391,33 +405,40 @@ function Board (topology, for_analysis_only) {
     return this.topology.cell_from_xy(p, canvas);
   }
 
-  this.snapshot = function() {
-    var visible = [];
-    var flagged = [];
-    this.for_each_cell(function(pos, cell, board) {
-        if (cell.visible) {
-          visible.push(cell);
-        }
-        if (cell.flagged) {
-          flagged.push(cell);
-        }
-      });
-    return {visible: visible, flagged: flagged};
-  }
+	this.snapshot = function() {
+		var visible = {};
+		var flagged = [];
+		this.for_each_cell(function(pos, cell, board) {
+			if (cell.visible) {
+				visible[cell.name] = (for_analysis_only ? cell.state : true);
+			}
+			if (cell.flagged) {
+				flagged.push(cell);
+			}
+		});
+		return {visible: visible, flagged: flagged, num_mines: this.num_mines, mine_prob: this.mine_prob};
+	}
 
-  this.restore = function(snapshot) {
-    this.for_each_cell(function(pos, cell, board) {
-        cell.visible = false;
-        cell.flagged = false;
-      });
-    var board = this;
-    $.each(snapshot.visible, function(i, cell) {
-        cell.visible = true;
-      });
-    $.each(snapshot.flagged, function(i, cell) {
-        cell.flagged = true;
-      });
-  }
+	this.restore = function(snapshot) {
+		this.for_each_cell(function(pos, cell, board) {
+			cell.visible = false;
+			cell.flagged = false;
+		});
+		var board = this;
+		this.for_each_name(Object.keys(snapshot.visible), function(pos, cell, board) {
+			cell.visible = true;
+			if (for_analysis_only) {
+				cell.state = snapshot.visible[cell.name];
+			}
+		});
+		$.each(snapshot.flagged, function(i, cell) {
+			cell.flagged = true;
+		});
+		if (for_analysis_only) {
+			this.num_mines = snapshot.num_mines;
+			this.mine_prob = snapshot.mine_prob;
+		}
+	}
 }
 
 function Cell (name, state, visible, flagged) {
