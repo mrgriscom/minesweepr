@@ -852,6 +852,7 @@ function EditCursor(sess, canvas) {
 			cell.flagged = (num_mines == 'flag');
 			if (num_mines == null || num_mines == 'flag') {
 				cell.visible = false;
+				cell.state = 0;
 			} else {
 				cell.visible = true;
 				cell.state = num_mines;
@@ -994,12 +995,11 @@ function Solution(probs) {
 			if (cell.visible) {
 				return;
 			}
-			
-        // still render overlay for cells erroneously flagged, or cells correctly flagged
-        // but we shouldn't know that yet (p != 1.)
-        if (!(cell.flagged && cell.state == 'mine') || prob < 1.) {
-          board.render_overlay(pos, canvas, prob_shade(prob, solu.best_guesses[cell.name] != null), cell.flagged && prob < 1.);
-        }
+			// don't render correctly flagged mines, IF solution has determined they're mines
+			if (cell.flagged && prob > 1. - EPSILON) {
+				return;
+			}
+			board.render_overlay(pos, canvas, prob_shade(prob, solu.best_guesses[cell.name] != null), cell.flagged && prob < 1.);
       });
   }
 
