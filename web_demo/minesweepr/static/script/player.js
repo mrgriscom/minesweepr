@@ -486,30 +486,45 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     }
 	  if (this.status != 'in_play') {
 		  reset_canvas(this.solution_canvas);
+		  set_spinner(null);
 	  }
 
     var changed = (result.survived != null);
     if (changed) {
       this.update_risk(uncovered_cells);
-
-      this.seq = next_seq();
       this.solution = null;
       this.first_move = false;
-	  push_state();
-    }
-	  if (changed || result.flags_changed) {
-		  this.refresh_board();
-	  }
-	  if (result.flags_changed) {
-		  this.refresh_solution();
-	  }
-
-    if (this.status == 'in_play' && changed) {
-      this.solve();
-    } else if (this.status != 'in_play') {
-      set_spinner(null);
-    }
+	}
+	  this.onstatechange(changed, result.flags_changed, this.status == 'in_play');
   }
+
+	this.onstatechange = function(board_changed, flags_changed, do_solve, timeout) {
+		var that = this;
+		var commit = function() {
+		    that.seq = next_seq();
+			push_state();
+			if (do_solve) {
+				that.solve();
+			}
+		}
+		
+		if (board_changed) {
+			if (timeout) {
+				clearTimeout(this.timer);
+				this.timer = setTimeout(commit, timeout);
+			} else {
+				commit();
+			}
+			this.refresh_board();
+		}
+		if (flags_changed) {
+			if (!board_changed) {
+				// don't refresh board twice
+				this.refresh_board();
+			}
+			this.refresh_solution();
+		}
+	}
 
   this.update_risk = function(cells_played) {
     if (this.total_risk == null) {
@@ -860,13 +875,7 @@ function EditCursor(sess, canvas) {
 			}
 		});
 
-		if (changed) {
-			this.onstatechange();
-		}
-		if (flags_changed) {
-			sess.refresh_board();
-			sess.refresh_solution();
-		}
+		sess.onstatechange(changed, flags_changed, true, ANALYSIS_SOLVE_TIMEOUT);
 	}
 
 	this.incr_cell_state = function(up) {
@@ -880,25 +889,7 @@ function EditCursor(sess, canvas) {
 				}
 			}
 		});
-
-		if (changed) {
-			this.onstatechange();
-		}
-	}
-
-	this.onstatechange = function() {
-		clearTimeout(this.timer);
-		var that = this;
-		this.timer = setTimeout(function() {
-			that.commit_board_change();
-		}, ANALYSIS_SOLVE_TIMEOUT);
-		sess.refresh_board();
-	}
-
-	this.commit_board_change = function() {
-		sess.seq = next_seq();
-		push_state();
-		sess.solve();
+		sess.onstatechange(changed, false, true, ANALYSIS_SOLVE_TIMEOUT);
 	}
 
 	
