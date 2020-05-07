@@ -338,6 +338,8 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 	this.refresh_board = function() {
 		if (!ANALYZER) {
 			this.update_info();
+		} else {
+			this.update_minecount_analysis_mode();
 		}
 		this.render_board();
 	}
@@ -586,17 +588,25 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 		if (this.game_mode() == 'count') {
 			s = this.board.num_mines;
 			mc = this.board.mine_counts();
-			s -= (mc.flagged + mc.flag_error); // count all flags -- all should be error bc we don't actually set mines
+			s -= (mc.flagged + mc.flag_error); // count all flags
 
-			var nonflagged_mines = 0;
+			var visible_mines = 0;
+			this.board.for_each_cell(function(pos, cell, board) {
+				if (cell.visible && cell.state == 'mine') {
+					visible_mines++;
+				}
+			});
+			s -= visible_mines;
+			
+			var deduced_mines_nonflagged = 0;
 			if (this.show_solution()) {
 				this.display_solution.each(this.board, function(pos, cell, prob, board) {
-					if (prob > 1. - EPSILON && !cell.flagged) {
-						nonflagged_mines++;
+					if (prob > 1. - EPSILON && !cell.flagged && !cell.visible) {
+						deduced_mines_nonflagged++;
 					}
 				});
 			}
-			s -= nonflagged_mines;
+			s -= deduced_mines_nonflagged;
 
 			$('#num_mines').css('color', s < 0 ? 'red' : '');
 		} else {
