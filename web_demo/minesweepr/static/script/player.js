@@ -418,14 +418,17 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     this.action(function(uncovered) {
         if (type == 'sweep') {
           uncovered.push(pos);
-          return game.board.uncover(pos);
+          var result = game.board.uncover(pos);
         } else if (type == 'sweep-all') {
-          return game.board.uncover_neighbors(pos, uncovered);
+			var result = game.board.uncover_neighbors(pos, uncovered);
         } else if (type == 'mark-toggle') {
 			game.board.flag(pos, 'toggle');
-			game.refresh_solution();
-          return null;
+			result = {survived: null, flags_changed: true};
         }
+		if (result.flags_changed) {
+			game.refresh_solution();
+		}
+		return result.survived;
       });
   }
 
@@ -444,14 +447,16 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 	  }
 	  
       this.action(function(uncovered) {
-        var action = false; 
-        var survived = true;
+        var action = false;
+          var survived = true;
+		  var flags_changed = false;
 
         // we don't add known safe cells to uncovered for efficiency,
         // but update_risk could handle it if we did
 
         if (game.first_safety()) {
-          game.board.uncover(game.board.safe_cell());
+			var result = game.board.uncover(game.board.safe_cell(), true);
+			flags_changed = flags_changed || result.flags_changed;
           action = true;
         } else if (solu) {
           var guesses = Object.keys(solu.best_guesses);	
@@ -459,19 +464,24 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 
           solu.each(game.board, function (pos, cell, prob, board) {
               if (prob < EPSILON) {
-                board.flag(pos, false);
-                board.uncover(pos);
+                  var result = board.uncover(pos, true);
+				  flags_changed = flags_changed || result.flags_changed;
                 action = true;
               } else if (prob > 1. - EPSILON) {
                 board.flag(pos);
               } else if (cell.name == guess) {
-                survived = board.uncover(pos);
+                  var result = board.uncover(pos, true);
+                  survived = result.survived;
+				  flags_changed = flags_changed || result.flags_changed;
                 uncovered.push(pos);
                 action = true;
               }
             });
         }
 
+		if (flags_changed) {
+			game.refresh_solution();
+		}
         return (action ? survived : null);
       });
   }
