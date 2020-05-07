@@ -418,71 +418,53 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     this.action(function(uncovered) {
         if (type == 'sweep') {
           uncovered.push(pos);
-          var result = game.board.uncover(pos);
+			return game.board.uncover(pos);
         } else if (type == 'sweep-all') {
-			var result = game.board.uncover_neighbors(pos, uncovered);
+			return game.board.uncover_neighbors(pos, uncovered);
         } else if (type == 'mark-toggle') {
 			game.board.flag(pos, 'toggle');
-			result = {survived: null, flags_changed: true};
+			return {survived: null, flags_changed: true};
         }
-		if (result.flags_changed) {
-			game.refresh_solution();
-		}
-		return result.survived;
       });
   }
 
   this.best_move = function() {
     if (!get_setting('play_auto')) {
-      return;
+		return;
     }
 
     var game = this;
       var solu = this.solution;
 
-	  // abort early if nothing to be done
-	  // this fixes some weirdness in chrome trying to auto-play on large boards
-	  if (solu == null && !game.first_safety()) {
-		  return;
-	  }
-	  
       this.action(function(uncovered) {
-        var action = false;
-          var survived = true;
-		  var flags_changed = false;
+          var final_result = {};
 
-        // we don't add known safe cells to uncovered for efficiency,
+          // we don't add known safe cells to uncovered for efficiency,
         // but update_risk could handle it if we did
 
         if (game.first_safety()) {
-			var result = game.board.uncover(game.board.safe_cell(), true);
-			flags_changed = flags_changed || result.flags_changed;
-          action = true;
+			return game.board.uncover(game.board.safe_cell(), true);
         } else if (solu) {
           var guesses = Object.keys(solu.best_guesses);	
           var guess = guesses.length > 0 ? choose_rand(guesses) : null;
 
-          solu.each(game.board, function (pos, cell, prob, board) {
+			solu.each(game.board, function (pos, cell, prob, board) {
+				var result = {};
               if (prob < EPSILON) {
-                  var result = board.uncover(pos, true);
-				  flags_changed = flags_changed || result.flags_changed;
-                action = true;
+                  result = board.uncover(pos, true);
               } else if (prob > 1. - EPSILON) {
-                board.flag(pos);
+                  board.flag(pos);
+				  // won't require a solution redraw, so don't set flags_changed
+				  result = {survived: null, flags_changed: false};
               } else if (cell.name == guess) {
-                  var result = board.uncover(pos, true);
-                  survived = result.survived;
-				  flags_changed = flags_changed || result.flags_changed;
+                  result = board.uncover(pos, true);
                 uncovered.push(pos);
-                action = true;
               }
+				merge_action_result(final_result, result);
             });
         }
 
-		if (flags_changed) {
-			game.refresh_solution();
-		}
-        return (action ? survived : null);
+		  return final_result;
       });
   }
 
@@ -495,10 +477,8 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     var uncovered_cells = [];
     var result = move(uncovered_cells);
 
-    var changed = (result != null);
-    var survived = (result || !changed);
-
-    if (!survived) {
+      if (result.survived == false) {
+		  // must explicitly check false as null ('no action') doesn't lose game
 		this.status = 'fail';
     } else if (this.board.is_complete(strict_completeness)) {
       // must check even on not 'changed', as flagging alone can trigger completeness in certain situations
@@ -508,16 +488,22 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 		  reset_canvas(this.solution_canvas);
 	  }
 
+    var changed = (result.survived != null);
     if (changed) {
       this.update_risk(uncovered_cells);
 
       this.seq = next_seq();
       this.solution = null;
       this.first_move = false;
-      push_state();
+	  push_state();
     }
+	  if (changed || result.flags_changed) {
+		  this.refresh_board();
+	  }
+	  if (result.flags_changed) {
+		  this.refresh_solution();
+	  }
 
-    this.refresh_board();
     if (this.status == 'in_play' && changed) {
       this.solve();
     } else if (this.status != 'in_play') {
@@ -721,6 +707,14 @@ function solve_query(board, url, callback, get_state) {
           callback(new Solution(data.solution), data.processing_time);
       }
     }, "json");
+}
+
+function merge_action_result(a, b) {
+	// survived == null means 'no action'
+	if (b.survived != null) {
+		a.survived = (a.survived == null ? b.survived : a.survived && b.survived);
+	}
+	a.flags_changed = a.flags_changed || b.flags_changed;
 }
 
 // make a call to solve a degenerate board to avoid cold starts with any

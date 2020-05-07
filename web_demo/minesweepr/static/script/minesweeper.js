@@ -84,35 +84,35 @@ function Board (topology, for_analysis_only) {
     }
   }
 
-	this.init_cell_state = function(pos, cell) {
-		if (cell.state != 'mine') {
-			cell.state = 0;
-			this.for_each_neighbor(pos, function (pos, neighb, board) {
-				if (neighb.state == 'mine') {
-					cell.state++;
-				}
-			});
-		}
-	}
+  this.init_cell_state = function(pos, cell) {
+    if (cell.state != 'mine') {
+      cell.state = 0;
+      this.for_each_neighbor(pos, function (pos, neighb, board) {
+        if (neighb.state == 'mine') {
+          cell.state++;
+        }
+      });
+    }
+  }
 
-	var cascade_overrides_flagged = true;
+  var cascade_overrides_flagged = true;
   //uncover a cell, triggering any cascades
   //return whether we survived, null if operation not applicable
-	this.uncover = function (pos, force) {
+  this.uncover = function (pos, force) {
     // can't do straight up recursion for cascades since very large boards might
     // exceed call stack limit
 
-	  var flags_changed = false;
+    var flags_changed = false;
     var board = this;
     var cascades = [];
     // original top-level function
     var _uncover = function (pos, force_unflag) {
       var cell = board.get_cell(pos);
       if (!cell.visible && (!cell.flagged || force_unflag)) {
-          cell.visible = true;
-		  if (cell.flagged) {
-			  flags_changed = true;
-		  }
+        cell.visible = true;
+        if (cell.flagged) {
+          flags_changed = true;
+        }
         cell.flagged = false;
         
         if (cell.state == 'mine') {
@@ -134,7 +134,7 @@ function Board (topology, for_analysis_only) {
     for (var i = 0; i < cascades.length; i++) {
       _uncover(cascades[i], cascade_overrides_flagged);
     }
-      return {survived: survived, flags_changed: flags_changed};
+    return {survived: survived, flags_changed: flags_changed};
   }
 
   //uncover all neighbors of a cell, provided the indicated number of neighboring mines
@@ -144,12 +144,12 @@ function Board (topology, for_analysis_only) {
   //uncovered_neighbors is an array -- only a param so we can pass the info back to
   //the parent; should be empty initially
   this.uncover_neighbors = function(pos, uncovered_neighbors) {
-    var final_result = {survived: null, flags_changed: false};
+    var final_result = {};
     uncovered_neighbors = uncovered_neighbors || [];
     var cell = this.get_cell(pos);
 
-      if (!cell.visible) {
-		  return final_result;
+    if (!cell.visible) {
+      return final_result;
     }
 
     var num_flagged_neighbors = 0;
@@ -162,21 +162,13 @@ function Board (topology, for_analysis_only) {
       });
 
     if (num_flagged_neighbors != cell.state || uncovered_neighbors.length == 0) {
-		return final_result;
+      return final_result;
     }
 
-      final_result.survived = true;
     var board = this;
     $.each(uncovered_neighbors, function(i, pos) {
         var result = board.uncover(pos);
-        if (result.survived == false) {
-          // need to ignore result == null: (cell was already uncovered due to
-          // cascade from previous neighbor)
-          final_result.survived = false;
-        }
-		if (result.flags_changed) {
-			final_result.flags_changed = true;
-		}
+		merge_action_result(final_result, result);
       });
       return final_result;
   }
