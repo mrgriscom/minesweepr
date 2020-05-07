@@ -297,19 +297,13 @@ function Board (topology, for_analysis_only) {
       });
   }
 
-	// TODO harmonize with python algo? remove 'trust_flags' support now that we can have uncovered mines for analysis?
+	// TODO harmonize with python algo?
   this.game_state = function (known_mines, everything_mode) {
-    // known_mines is a list of cell (names) actually known to be mines. if null, flagged cells
-    // will be considered mines. this is 'trust flags' mode
+    // known_mines is a list of cell (names) actually known to be mines.
 
 	// to keep honest we never actually check a cell's 'mine' flag. one exception is setting explicit
 	// mines in analysis mode; it's ok to check these because the cell is visible; a visible mine
 	// in normal gameplay mode indicates a lost game
-		
-    // note: this app is not equipped to render solutions from 'everything' or 'trust flags' mode
-    // 'trust flags' mode will also cause the solver to report inconsistent game states if cells
-    // are flagged incorrectly
-	// TODO is this still true?
 		
     var rules = [];
     var clear_cells = {};
@@ -317,7 +311,7 @@ function Board (topology, for_analysis_only) {
 	var relevant_mines = {};
     var num_known_mines = 0;
 
-    // ensure cell_names is not modified later!
+    // cell_names must not be modified later!
 	var mk_rule = function(num_mines, cell_names) {
 		return {num_mines: num_mines, cells: cell_names};
     }
@@ -326,15 +320,14 @@ function Board (topology, for_analysis_only) {
       set[cell.name] = cell;
     }
 
-	var is_mine = (function() {
-        var is_known = in_set(known_mines || []);
-        return function(cell) {
-          var trust_flags = (known_mines == null);
-			return (trust_flags ? cell.flagged : is_known(cell.name)) ||
-				// exposed mines in analysis mode
-				(cell.visible && cell.state == 'mine');
-        };
-    })();
+	  var is_mine = (function() {
+          var is_known = in_set(known_mines || []);
+          return function(cell) {
+			  return is_known(cell.name) ||
+				  // exposed mines in analysis mode
+				  (cell.visible && cell.state == 'mine');
+		  };
+	  })();
 
 	var potential_mine = function(cell) {
 		return !cell.visible ||

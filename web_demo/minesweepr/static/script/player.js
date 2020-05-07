@@ -367,7 +367,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
           game.refresh_solution();
         }
       }, function(board) {
-          return ANALYZER ? board.game_state([], true) : board.game_state(game.known_mines);
+          return ANALYZER ? board.game_state(null, true) : board.game_state(game.known_mines);
       });
   }
 
