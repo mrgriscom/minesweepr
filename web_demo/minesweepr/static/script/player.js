@@ -49,6 +49,7 @@ $(document).ready(function() {
 	}
 	
     $('#show_mines').click(function(e) {
+		GAME.draw_ctx.refresh();
         GAME.refresh_board();
 		GAME.refresh_solution();
       });
@@ -278,7 +279,7 @@ function new_topo(type, w, h, d) {
 }
 
 function new_board(topo, minespec) {
-	board = new Board(topo, ANALYZER);
+	var board = new Board(topo, ANALYZER);
 	board[{'count': 'populate_n', 'prob': 'populate_p'}[minespec.mode]](minespec.k);
 	return board;
 }
@@ -305,8 +306,9 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 	this.solution_canvas = solution_canvas;
   this.first_safe = first_safe;
 	this.cursor = (ANALYZER ? new EditCursor(this, cursor_canvas) : null);
-	
-  this.start = function() {
+
+
+	this.start = function() {
     this.seq = next_seq();
     this.status = 'in_play';
     this.total_risk = 0.;
@@ -322,6 +324,13 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     //we won't check for this until the user takes some action, because the degenerate-case solution
     //is interesting to present
 
+	this.draw_ctx = new DrawContext(this);
+	this.draw_ctx.canvas = $('#game_canvas')[0];
+	this.draw_ctx.ctx = this.draw_ctx.canvas.getContext('2d');
+	board.init_draw(this.draw_ctx);
+
+
+		
     if (this.first_safety()) {
       this.solve_first_safe();
     } else {
@@ -341,7 +350,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 		} else {
 			this.update_minecount_analysis_mode();
 		}
-		this.render_board();
+		//this.render_board();
 	}
 
   this.refresh_solution = function() {
@@ -391,10 +400,12 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
   }
 
 	this.render_board = function() {
+		/*
 		var params = {
 			show_mines: this.show_mines() && !this.first_safety(),
 		};
 		this.board.render(this.canvas, params);
+*/
 	}
 
 	this.render_solution = function() {
@@ -507,7 +518,8 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 				that.solve();
 			}
 		}
-		
+
+		this.draw_ctx.refresh();
 		if (board_changed) {
 			if (timeout) {
 				clearTimeout(this.timer);
@@ -702,6 +714,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     this.board.restore(snapshot.board_state);
     this.set_solution(SOLUTIONS[this.seq]);
 
+	  this.draw_ctx.refresh();
       this.refresh_board();
 	  this.refresh_solution();
 
@@ -738,6 +751,36 @@ function warm_api() {
   solve_query(null, SOLVER_URL, function(){}, function(b) {
     return {rules: [], total_cells: 0, total_mines:0}
   });
+}
+
+function DrawContext (sess) {
+	this.board = null;
+	this.canvas = null;
+	this.ctx = null;
+
+	this._params = function() {
+		return {
+			show_mines: sess.show_mines() && !sess.first_safety(),
+		}
+	}
+	this.params = this._params();
+
+	this.refresh = function() {
+		var new_params = this._params();
+		var diff = {};
+		var that = this;
+		$.each(new_params, function(k, v) {
+			if (that.params[k] != v) {
+				diff[k] = v;
+			}
+		});
+		this.params = new_params;
+		if (Object.keys(diff).length > 0) {
+			this.board.for_each_cell(function(pos, cell, board) {
+				cell.needs_redraw({params: diff});
+			});
+		}
+	}
 }
 
 function EditCursor(sess, canvas) {
@@ -851,7 +894,8 @@ function EditCursor(sess, canvas) {
 		this.render();
 	}
 
-	
+
+	// FIXME
 	this.set_cell_state = function(num_mines) {
 		var changed = false;
 		var flags_changed = false;
@@ -878,6 +922,7 @@ function EditCursor(sess, canvas) {
 		sess.onstatechange(changed, flags_changed, true, ANALYSIS_SOLVE_TIMEOUT);
 	}
 
+	// FIXME
 	this.incr_cell_state = function(up) {
 		var changed = false;
 		this.for_cursor(function(pos, cell, board) {
@@ -1132,7 +1177,8 @@ function resize_canvas() {
       e.height = h;
     });
 
-  if (window.GAME) {
+	if (window.GAME) {
+		GAME.board.draw_all();
       GAME.refresh_board();
 	  GAME.refresh_solution();
   }

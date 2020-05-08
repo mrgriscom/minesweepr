@@ -34,8 +34,10 @@ function prob_shade (p, best) {
 function Board (topology, for_analysis_only) {
   this.topology = topology;
   this.cells = [];
-  this.cells_by_name = {};
+	this.cells_by_name = {};
 
+	this.draw_ctx = null;
+	
   this.populate_n = function (num_mines) {
     this.num_mines = num_mines;
     this.init(this.n_dist());
@@ -46,20 +48,33 @@ function Board (topology, for_analysis_only) {
     this.init(this.p_dist());
   }
 
-  this.init = function (mine_dist) {
-      for (var i = 0; i < mine_dist.length; i++) {
-      this.cells.push(new Cell(null, mine_dist[i] && !for_analysis_only ? 'mine' : null, false, false));
-    }
-    this.for_each_cell(function (pos, cell, board) {
+	this.init = function (mine_dist) {
+		for (var i = 0; i < this.topology.num_cells(); i++) {
+		  this.cells.push(new Cell());
+      }
+		this.for_each_cell(function (pos, cell, board) {
+			var ix = board.topology.cell_ix(pos);
         cell.pos = pos;      
         cell.name = board.topology.cell_name(pos);
         board.cells_by_name[cell.name] = cell;
+		
+		cell.set({state: mine_dist[ix] && !for_analysis_only ? 'mine' : null});
     });
     this.for_each_cell(function (pos, cell, board) {
         board.init_cell_state(pos, cell);
-      });
+    });
   }
 
+	this.init_draw = function(draw_ctx) {
+		this.draw_ctx = draw_ctx;
+		draw_ctx.board = this;
+		this.draw_all();
+		// FIXME redundant redraw
+    this.for_each_cell(function (pos, cell, board) {
+        cell.init_draw(draw_ctx);
+    });
+	}
+	
   //reshuffle board so 'pos' will not be a mine
   //only allowed to be called before any cells are uncovered
   //assumes at least one cell on the board is safe
@@ -67,8 +82,8 @@ function Board (topology, for_analysis_only) {
     var cell = this.get_cell(pos);
     if (cell.state == 'mine') {
       var swap_pos = this.safe_cell();
-      this.get_cell(swap_pos).state = 'mine';
-      cell.state = null;
+		this.get_cell(swap_pos).set({state: 'mine'});
+		cell.set({state: null});
 
       // re-init neighboring mine counts for relevant cells
       var board = this;
@@ -86,12 +101,13 @@ function Board (topology, for_analysis_only) {
 
   this.init_cell_state = function(pos, cell) {
     if (cell.state != 'mine') {
-      cell.state = 0;
+      var count = 0;
       this.for_each_neighbor(pos, function (pos, neighb, board) {
         if (neighb.state == 'mine') {
-          cell.state++;
+          count++;
         }
       });
+		cell.set({state: count});
     }
   }
 
@@ -109,12 +125,13 @@ function Board (topology, for_analysis_only) {
     var _uncover = function (pos, force_unflag) {
       var cell = board.get_cell(pos);
       if (!cell.visible && (!cell.flagged || force_unflag)) {
-        cell.visible = true;
-        if (cell.flagged) {
-          flags_changed = true;
-        }
-        cell.flagged = false;
-        
+        //cell.visible = true;
+        //if (cell.flagged) {
+        //  flags_changed = true;
+        //}
+        //cell.flagged = false;
+		  cell.set({visible: true, flagged: false});
+		  
         if (cell.state == 'mine') {
           return false;
         } else {
@@ -181,7 +198,7 @@ function Board (topology, for_analysis_only) {
       if (mode == null) {
         mode = true;
       }
-      cell.flagged = (mode == 'toggle' ? !cell.flagged : mode);
+		cell.set({flagged: (mode == 'toggle' ? !cell.flagged : mode)});
     }
   }
 
@@ -391,15 +408,24 @@ function Board (topology, for_analysis_only) {
     return state;
   }
 
-  this.render = function (canvas, params) {
+	this.render = function (canvas, params) {
+		/*
     var default_params = {
       show_mines: true,
     };
     params = $.extend(default_params, params || {});
 
-      var ctx = reset_canvas(canvas);
+      //var ctx = reset_canvas(canvas);
       this.for_each_cell(function (pos, cell, board) {
-        cell.render(board.topology.geom(pos, canvas), ctx, params);
+        //cell.render(board.topology.geom(pos, canvas), ctx, params);
+      });
+*/
+  }
+
+  this.draw_all = function() {
+      var ctx = reset_canvas(this.draw_ctx.canvas);
+      this.for_each_cell(function (pos, cell, board) {
+          cell.draw();
       });
   }
 
@@ -417,13 +443,13 @@ function Board (topology, for_analysis_only) {
 
 	this.snapshot = function() {
 		var visible = {};
-		var flagged = [];
+		var flagged = {};
 		this.for_each_cell(function(pos, cell, board) {
 			if (cell.visible) {
 				visible[cell.name] = (for_analysis_only ? cell.state : true);
 			}
 			if (cell.flagged) {
-				flagged.push(cell);
+				flagged[cell.name] = true;
 			}
 		});
 		return {visible: visible, flagged: flagged, num_mines: this.num_mines, mine_prob: this.mine_prob};
@@ -431,18 +457,14 @@ function Board (topology, for_analysis_only) {
 
 	this.restore = function(snapshot) {
 		this.for_each_cell(function(pos, cell, board) {
-			cell.visible = false;
-			cell.flagged = false;
-		});
-		var board = this;
-		this.for_each_name(Object.keys(snapshot.visible), function(pos, cell, board) {
-			cell.visible = true;
+			var vals = {
+				visible: cell.name in snapshot.visible,
+				flagged: cell.name in snapshot.flagged,
+			};
 			if (for_analysis_only) {
-				cell.state = snapshot.visible[cell.name];
+				vals.state = snapshot.visible[cell.name];
 			}
-		});
-		$.each(snapshot.flagged, function(i, cell) {
-			cell.flagged = true;
+			cell.set(vals);
 		});
 		if (for_analysis_only) {
 			this.num_mines = snapshot.num_mines;
@@ -451,16 +473,59 @@ function Board (topology, for_analysis_only) {
 	}
 }
 
-function Cell (name, state, visible, flagged) {
-  this.name = name;
-  this.pos = null;	
-  this.state = state;
-  this.visible = visible;
-  this.flagged = flagged;
+function Cell () {
+  this.name = null;
+  this.pos = null;
+	
+  this.state = null;
+  this.visible = false;
+  this.flagged = false;
 
+	this.draw_ctx;
 	// cache if this cell's neighbors differ from those returned by adjacent() due to
 	// deduplication. if yes, list of neighbors; if no, false; if not yet cached, null
 	this._deduped_neighbors;
+	
+	this.set = function(vals) {
+		var old = {};
+		var that = this;
+		$.each(['state', 'visible', 'flagged'], function(i, field) {
+			if (field in vals && that[field] != vals[field]) {
+				old[field] = that[field];
+				that[field] = vals[field];
+			}
+		});
+		this.needs_redraw(old);
+	}
+
+	this.needs_redraw = function(old) {
+		var redraw_board = false;
+		if ('visible' in old || 'flagged' in old || ('state' in old && this.visible)) {
+			redraw_board = true;
+		}
+		if ('params' in old) {
+			if ('show_mines' in old.params &&
+				((this.state == 'mine' && !this.flagged) || (this.flagged && this.state != 'mine'))) {
+				redraw_board = true;
+			}
+		}
+		if (redraw_board) {
+			this.draw();
+		}
+	}
+
+	this.draw = function() {
+		if (this.draw_ctx == null) {
+			return;
+		}
+		
+        this.render(this.draw_ctx.board.topology.geom(this.pos, this.draw_ctx.canvas), this.draw_ctx.ctx, this.draw_ctx.params);
+    }
+
+	this.init_draw = function(draw_ctx) {
+		this.draw_ctx = draw_ctx;
+		this.draw();
+	}
 	
 	this.render = function (g, ctx, params) {
 		ctx.beginPath();
