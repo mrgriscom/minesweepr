@@ -49,22 +49,15 @@ $(document).ready(function() {
 	}
 	
     $('#show_mines').click(function(e) {
-		GAME.draw_ctx.refresh();
-        GAME.refresh_board();
-		GAME.refresh_solution();
+		GAME.refresh();
       });
     $('#show_sol').click(function(e) {
-        GAME.refresh_solution();
+        GAME.refresh();
       });
     $('#show_sol').change(function(e) {
         $('#legend')[$(e.target).attr('checked') ? 'show' : 'hide']();
       });
     
-    $('#play_auto').click(function(e) {
-        var enabled = get_setting('play_auto');
-        $('#step')[enabled ? 'removeClass' : 'addClass']('disabled');
-      });
-
 	$('#swapmineformat').click(function(e) {
 		$('#mines').val(swapmineformat());
 	});
@@ -73,7 +66,6 @@ $(document).ready(function() {
     UI_CANVAS.mouseout(function(e) {
         hover_overlays(null);
       });
-    hover_overlays(null);
     $('#win').hide();
     $('#fail').hide();
     $('#inconsistent').hide();
@@ -137,8 +129,6 @@ function set_defaults() {
 
   selectChoice($('input[name="topo"][value="grid"]'));
 	selectChoice($('#first_safe'), !ANALYZER);
-  selectChoice($('#play_auto'));
-  selectChoice($('#play_manual'));
   selectChoice($('#show_mines'), false);
   selectChoice($('#show_sol'));
   selectChoice($('#highlighting'));
@@ -250,7 +240,6 @@ function new_game() {
 function game_reset() {
   UNDO_STACK = [];
   SOLUTIONS = {};
-  hover_overlays(null);
 }
 
 function new_topo(type, w, h, d) {
@@ -307,15 +296,12 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
   this.first_safe = first_safe;
 	this.cursor = (ANALYZER ? new EditCursor(this, cursor_canvas) : null);
 
-
 	this.start = function() {
     this.seq = next_seq();
     this.status = 'in_play';
     this.total_risk = 0.;
-    this.first_move = true;
+		this.first_move = true;
     this.solution = null;
-    // used for display purposes but not for logic, for when real solution is being recomputed
-    this.display_solution = null;
     // a list of solved mines (as opposed to user-flagged mines), to make subsequent solving
     // more efficient
     this.known_mines = [];
@@ -324,19 +310,17 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     //we won't check for this until the user takes some action, because the degenerate-case solution
     //is interesting to present
 
-	this.draw_ctx = new DrawContext(this);
-	this.draw_ctx.canvas = $('#game_canvas')[0];
-	this.draw_ctx.ctx = this.draw_ctx.canvas.getContext('2d');
-	board.init_draw(this.draw_ctx);
-
-
+		this.draw_ctx = new DrawContext(this, canvas, solution_canvas);
+		board.set_draw(this.draw_ctx);
+		this.draw_ctx.draw_board();
+		reset_canvas(this.solution_canvas);
 		
     if (this.first_safety()) {
       this.solve_first_safe();
     } else {
       this.solve();
     }
-    this.refresh_board();
+    this.refresh();
 	  if (this.cursor) {
 		  this.cursor.render();
 	  }
@@ -344,83 +328,81 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     push_state();
   }
 
-	this.refresh_board = function() {
+	this.refresh = function() {
 		if (!ANALYZER) {
 			this.update_info();
 		} else {
 			this.update_minecount_analysis_mode();
 		}
-		//this.render_board();
+		this.set_solution_visibility();
+		this.draw_ctx.refresh();
+		OVERLAY_UPDATE();
 	}
 
-  this.refresh_solution = function() {
-    this.render_solution();
-    TOOLTIP_UPDATE();
-	  $('#inconsistent')[this.show_solution() && this.display_solution.inconsistent ? 'show' : 'hide']();
-	  if (ANALYZER) {
-		  this.update_minecount_analysis_mode();
-	  }
-  }
-
+	this.set_solution_visibility = function() {
+		$(this.solution_canvas)[this.show_solution() ? 'show' : 'hide']();
+		$('#solution-valid')[this.show_solution() ? 'show' : 'hide']();
+		$('.solution-status').css('visibility', this.show_solution() ? 'visible' : 'collapse');
+		// tooltip handles itself
+	}
+	
   this.solve = function() {
-    var sol_context = new_solution_context(this);
+    var sol_context = new_solving_context(this);
     sol_context.refresh();
-
+	  
     var game = this;
     var seq = this.seq;
     solve_query(this.board, SOLVER_URL, function (solution, proc_time) {
-        sol_context.update(solution, proc_time);
+        sol_context.update(solution != null ? new Solution(solution) : null, proc_time);
         // make sure the game state this solution is for is still the current one
         if (GAME == game && seq == game.seq) {
-          game.set_solution(sol_context);
-          game.refresh_solution();
+			game.set_solution(sol_context);
         }
       }, function(board) {
           return ANALYZER ? board.game_state(null, true) : board.game_state(game.known_mines);
       });
   }
 
-  this.set_solution = function(sc) {
-    var solution = sc.solution;
-    if (solution) {
-      solution.process(this.board);
+	this.set_solution = function(sc) {
+		this.solution = sc.solution;
+    if (this.solution) {
+      this.solution.process(this.board);
 
       var game = this;
       var is_known = in_set(this.known_mines);
-      solution.each(this.board, function (pos, cell, prob, board) {
+      this.solution.each(this.board, function (pos, cell, prob, board) {
           if (prob > 1. - EPSILON && !is_known(cell.name)) {
             game.known_mines.push(cell.name);
           }
-        });
-    }
-    this.solution = solution;
-    this.display_solution = solution;
-
-    sc.refresh();
-  }
-
-	this.render_board = function() {
-		/*
-		var params = {
-			show_mines: this.show_mines() && !this.first_safety(),
-		};
-		this.board.render(this.canvas, params);
-*/
+      });
 	}
+		this.board.for_each_cell(function(pos, cell, board) {
+			// don't render for uncovered cells
+			if (sc.solution != null && !cell.visible) {
+				cell.set({'prob': sc.solution.get_prob(pos, board), 'best_guess': sc.solution.best_guesses[cell.name] != null});
+			} else {
+				cell.set({'prob': null});
+			}
 
-	this.render_solution = function() {
-		if (this.show_solution()) {
-			this.display_solution.render(this.solution_canvas, this.board);
+		});
+
+		if (this.solution) {
+			this.solution.render(this.draw_ctx);
 		} else {
 			reset_canvas(this.solution_canvas);
 		}
-	}
+
+		OVERLAY_UPDATE();
+
+		if (ANALYZER) {
+			// solution is used to update mine counts in analyzer mode
+			this.update_minecount_analysis_mode();
+		}
+	  
+    sc.refresh();
+  }
 
   this.manual_move = function(pos, type) {
-    if (!get_setting('play_manual')) {
-      return;
-    }
-
     if (this.first_safety() && type == 'sweep') {
       this.board.ensure_safety(pos);
     }
@@ -440,10 +422,6 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
   }
 
   this.best_move = function() {
-    if (!get_setting('play_auto')) {
-		return;
-    }
-
     var game = this;
       var solu = this.solution;
 
@@ -495,10 +473,6 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
       // must check even on not 'changed', as flagging alone can trigger completeness in certain situations
 		this.status = 'win';
     }
-	  if (this.status != 'in_play') {
-		  reset_canvas(this.solution_canvas);
-		  set_spinner(null);
-	  }
 
     var changed = (result.survived != null);
     if (changed) {
@@ -519,7 +493,6 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 			}
 		}
 
-		this.draw_ctx.refresh();
 		if (board_changed) {
 			if (timeout) {
 				clearTimeout(this.timer);
@@ -527,15 +500,8 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 			} else {
 				commit();
 			}
-			this.refresh_board();
 		}
-		if (flags_changed) {
-			if (!board_changed) {
-				// don't refresh board twice
-				this.refresh_board();
-			}
-			this.refresh_solution();
-		}
+		this.refresh();
 	}
 
   this.update_risk = function(cells_played) {
@@ -623,8 +589,8 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 			
 			var deduced_mines_nonflagged = 0;
 			if (this.show_solution()) {
-				this.display_solution.each(this.board, function(pos, cell, prob, board) {
-					if (prob > 1. - EPSILON && !cell.flagged && !cell.visible) {
+				this.board.for_each_cell(function(pos, cell, prob, board) {
+					if (cell.prob > 1. - EPSILON && !cell.flagged && !cell.visible) {
 						deduced_mines_nonflagged++;
 					}
 				});
@@ -670,7 +636,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
   }
 
   this.show_solution = function() {
-      return get_setting('show_sol') && this.display_solution;
+      return get_setting('show_sol') && this.status == 'in_play';
   }
 
   this.first_safety = function() {
@@ -682,10 +648,9 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
   }
 
   this.solve_first_safe = function() {
-    var sol_context = new_solution_context(this);
+    var sol_context = new_solving_context(this);
     sol_context.update(new Solution({_other: 0.}), 0.);
       this.set_solution(sol_context);
-	  this.refresh_solution();
   }
 
   this.mouse_cell = function(e) {
@@ -712,11 +677,9 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 
     // these must happen in this order
     this.board.restore(snapshot.board_state);
+	  this.refresh();
     this.set_solution(SOLUTIONS[this.seq]);
 
-	  this.draw_ctx.refresh();
-      this.refresh_board();
-	  this.refresh_solution();
 
 	  if (ANALYZER) {
 		  // analysis mode can change # of mines in board, and this is the only place
@@ -732,7 +695,7 @@ function solve_query(board, url, callback, get_state) {
       if (data.error) {
         callback(null, null);
       } else {
-          callback(new Solution(data.solution), data.processing_time);
+          callback(data.solution, data.processing_time);
       }
     }, "json");
 }
@@ -753,11 +716,50 @@ function warm_api() {
   });
 }
 
-function DrawContext (sess) {
+function DrawContext (sess, canvas, solution_canvas) {
 	this.board = null;
-	this.canvas = null;
-	this.ctx = null;
+	this.canvas = canvas;
+	this.solution_canvas = solution_canvas;
+	
+  this.draw_board = function() {
+      reset_canvas(this.canvas);
+      this.board.for_each_cell(function (pos, cell, board) {
+          cell.draw(true);
+      });
+  }
 
+  this.draw_solution = function() {
+      reset_canvas(this.solution_canvas);
+      this.board.for_each_cell(function (pos, cell, board) {
+          cell.draw_solution(true);
+      });
+  }
+
+	this.render_overlay = function(pos, canvas, fill) {
+		this.draw(this.board.get_cell(pos), 'render_overlay', canvas, false, {fill: fill});
+  }
+	
+	this.render_cursor = function(pos, canvas) {
+		this.draw(this.board.get_cell(pos), 'render_cursor', canvas, false);
+	}
+	
+	this.draw = function(cell, drawfuncname, canvas, clear_first, args, clear_always) {
+		var geom = this.board.topology.geom(cell.pos, canvas);
+		var ctx = canvas.getContext('2d');
+		if (clear_first) {
+			ctx.beginPath();
+			var needs_clear = geom.path(ctx, true);
+			if (needs_clear || clear_always) {
+ 				var compop = ctx.globalCompositeOperation;
+				ctx.globalCompositeOperation = 'destination-out';
+				ctx.fillStyle = 'white';
+				ctx.fill();
+				ctx.globalCompositeOperation = compop;
+			}
+		}
+		cell[drawfuncname](geom, ctx, args);
+	}
+	
 	this._params = function() {
 		return {
 			show_mines: sess.show_mines() && !sess.first_safety(),
@@ -902,14 +904,12 @@ function EditCursor(sess, canvas) {
 		this.for_cursor(function(pos, cell, board) {
 			var orig = {...cell};
 
-			cell.flagged = (num_mines == 'flag');
-			if (num_mines == null || num_mines == 'flag') {
-				cell.visible = false;
-				cell.state = 0;
-			} else {
-				cell.visible = true;
-				cell.state = num_mines;
-			}
+			var hidden = (num_mines == null || num_mines == 'flag');
+			cell.set({
+				visible: !hidden,
+				state: hidden ? 0 : num_mines,
+				flagged: (num_mines == 'flag'),
+			});
 
 			if (orig.visible != cell.visible || orig.state != cell.state) {
 				changed = true;
@@ -926,9 +926,9 @@ function EditCursor(sess, canvas) {
 	this.incr_cell_state = function(up) {
 		var changed = false;
 		this.for_cursor(function(pos, cell, board) {
-			if (cell.visible) {
+			if (cell.visible && cell.state != 'mine') {
 				var old_state = cell.state;
-				cell.state = Math.min(Math.max(cell.state + (up ? 1 : -1), 0), board.topology.adjacent(cell.pos).length);
+				cell.set({state: Math.min(Math.max(cell.state + (up ? 1 : -1), 0), board.topology.adjacent(cell.pos).length)});
 				if (cell.state != old_state) {
 					changed = true;
 				}
@@ -942,7 +942,7 @@ function EditCursor(sess, canvas) {
 		reset_canvas(this.canvas);
 		var that = this;
 		this.for_cursor(function(pos, cell, board) {
-			board.render_cursor(pos, that.canvas);
+			sess.draw_ctx.render_cursor(pos, that.canvas);
 		});
 	}
 
@@ -963,8 +963,7 @@ function EditCursor(sess, canvas) {
 }
 
 function Solution(probs) {
-	this.inconsistent = (probs == null);
-	this.cell_probs = probs || {};
+	this.cell_probs = probs;
   this.best_guesses = {};
   this.other_cells = {};
 
@@ -1013,24 +1012,8 @@ function Solution(probs) {
     _apply(Object.keys(this.other_cells), function(name) { return solu.other_prob(); });
   }
 
-	this.render = function(canvas, board) {
-		reset_canvas(canvas);
-		if (this.inconsistent) {
-			return;
-		}
-		
-      var solu = this;	  
-		this.each(board, function (pos, cell, prob, board) {
-			// don't render for uncovered cells
-			if (cell.visible) {
-				return;
-			}
-			// don't render correctly flagged mines, IF solution has determined they're mines
-			if (cell.flagged && prob > 1. - EPSILON) {
-				return;
-			}
-			board.render_overlay(pos, canvas, prob_shade(prob, solu.best_guesses[cell.name] != null), cell.flagged && prob < 1.);
-      });
+	this.render = function(draw_ctx) {
+		draw_ctx.draw_solution();
   }
 
   this.get_prob = function(pos, board) {
@@ -1060,7 +1043,7 @@ function Solution(probs) {
   }
 }
 
-function SolutionContext() {
+function SolvingContext() {
   this.solution = null;
   this.proc_time = null;
 
@@ -1069,23 +1052,26 @@ function SolutionContext() {
     this.proc_time = (proc_time == null ? -1. : proc_time);
   }
 
-  this.refresh = function() {
-    set_spinner(this.state());
+	this.refresh = function() {
+		set_spinner(this.state(), this.proc_time);
+	  	$('#inconsistent')[this.state() == 'inconsistent' ? 'show' : 'hide']();
   }
 
   this.state = function() {
     if (this.proc_time == null) {
       return 'solving';
     } else if (this.proc_time < 0.) {
-      return 'timeout';
+		return 'timeout';
+	} else if (this.solution == null) {
+		return 'inconsistent';
     } else {
-      return this.proc_time;
+      return 'solved';
     }
   }
 }
 
-function new_solution_context(game) {
-  var sol_context = new SolutionContext();
+function new_solving_context(game) {
+  var sol_context = new SolvingContext();
   SOLUTIONS[game.seq] = sol_context;
   return sol_context;
 }
@@ -1099,6 +1085,7 @@ function mousePos(evt, elem) {
 }
 
 function hover_overlays(e) {
+	OVERLAY_UPDATE = function() {
   if (e) {
     var xy = {x: e.pageX, y: e.pageY};
     var pos = GAME.mouse_cell(e);
@@ -1106,19 +1093,18 @@ function hover_overlays(e) {
     var xy = null;
     var pos = null;
   }
-  neighbor_overlay(pos);
-  TOOLTIP_UPDATE = function() {
-    prob_tooltip(pos, xy);
+		neighbor_overlay(pos);
+		prob_tooltip(pos, xy);
   };
-  TOOLTIP_UPDATE();
+  OVERLAY_UPDATE();
 }
 
-var TOOLTIP_UPDATE = function(){};
+var OVERLAY_UPDATE = function(){};
 var cellname_in_tooltip = false;
 function prob_tooltip(pos, mousePos) {
   var show = false;
   if (pos && GAME.show_solution()) {
-    var prob = GAME.display_solution.get_prob(pos, GAME.board);
+      var prob = GAME.board.get_cell(pos).prob;
     show = (prob > EPSILON && prob < 1. - EPSILON);
   }
 
@@ -1149,12 +1135,12 @@ function neighbor_overlay(pos) {
   }
 
   var cur_cell = GAME.board.get_cell(pos);
-  if (!cur_cell.visible || cur_cell.state != 0) {
-    GAME.board.render_overlay(pos, canvas, HIGHLIGHT_CUR_CELL);
+	if (!cur_cell.visible || cur_cell.state != 0) {
+		GAME.draw_ctx.render_overlay(pos, canvas, HIGHLIGHT_CUR_CELL);
   }
   GAME.board.for_each_neighbor(pos, function (pos, neighb, board) {
       if (!neighb.visible) {
-        board.render_overlay(pos, canvas, HIGHLIGHT_NEIGHBOR);
+        GAME.draw_ctx.render_overlay(pos, canvas, HIGHLIGHT_NEIGHBOR);
       }
     });
 }
@@ -1178,9 +1164,8 @@ function resize_canvas() {
     });
 
 	if (window.GAME) {
-		GAME.board.draw_all();
-      GAME.refresh_board();
-	  GAME.refresh_solution();
+		GAME.draw_ctx.draw_board();
+		GAME.draw_ctx.draw_solution();
   }
 }
 
@@ -1209,7 +1194,7 @@ function next_seq() {
   return SEQ;
 }
 
-function set_spinner(state) {
+function set_spinner(state, time) {
   if (state == null) {
     $('#solving').hide();
     $('#solved').hide();
@@ -1227,7 +1212,7 @@ function set_spinner(state) {
       s_time.mousemove(function(e) { $('#timeout').show(); });
       s_time.mouseout(function(e) { $('#timeout').hide(); });
     } else {
-      var s_time = (+state).toFixed(3) + 's';
+      var s_time = time.toFixed(3) + 's';
     }
     $('#solve_time').html(s_time);
   }

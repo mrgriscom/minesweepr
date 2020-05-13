@@ -192,10 +192,6 @@ td {
   <tr>
   <td style="vertical-align: top;">
 
-<div style="display: none;">
-  <nobr><input id="play_auto" type="checkbox"> <label for="play_auto" title="Enable auto play where the computer makes the best move for you">Auto play</label></nobr><br>
-  <nobr><input id="play_manual" type="checkbox"> <label for="play_manual" title="Enable manual play where you can make moves yourself">Manual play</label></nobr><br>
-</div>
   <span id="showmines_opt"><nobr><input id="show_mines" type="checkbox"> <label for="show_mines" title="Show the locations of all mines on the board (if '1st click safe', mines are not positioned until after the first move)">Show mines</label></nobr><br></span>
   <span id="showsol_opt"><nobr><input id="show_sol" type="checkbox"> <label for="show_sol" title="Show the board solution">Show solution</label></nobr><br></span>
   <nobr><input id="highlighting" type="checkbox"> <label for="highlighting" title="Highlight which cells are adjacent to the cell you're currently hovering over">Highlighting</label></nobr>
@@ -246,19 +242,21 @@ td {
   </table>
 
   </td>
-  <td id="gamestats">
+  <td id="gamestats" style="vertical-align: top;">
 
-  <table style="height: 100%; width: 10em;">
+	<table style="height: 100%; width: 10em; vertical-align: top;">
     <tr id="minesleft"><td># mines left:</td><td id="num_mines" class="gamestat">&mdash;</td></tr>
     <tr id="totalrisk"><td>total accumulated risk:</td><td id="risk" class="gamestat">&mdash;</td></tr>
-    <tr id="solving" style="height: 35px;"><td style="vertical-align: top;">solving&hellip;</td><td class="gamestat"><img src="{{ STATIC_URL }}img/loading.gif"></td></tr>
-    <tr id="solved"><td style="vertical-align: top;">solved in:</td><td class="gamestat"><span id="solve_time"></span></td></tr>
-    <tr><td colspan="2" height="100%" style="text-align: center; vertical-align: bottom; font-weight: bold; font-size: 48px;">
+    <tr id="solving" class="solution-status" style="height: 35px;"><td style="vertical-align: top;">solving&hellip;</td><td class="gamestat"><img src="{{ STATIC_URL }}img/loading.gif"></td></tr>
+    <tr id="solved" class="solution-status"><td style="vertical-align: top;">solved in:</td><td class="gamestat"><span id="solve_time"></span></td></tr>
+      <tr><td colspan="2" height="100%" style="text-align: center; vertical-align: bottom; font-weight: bold; font-size: 48px;">
       <span id="win" style="color: green;">WIN</span>
       <span id="fail" style="color: red;">FAIL</span>
-      <span id="inconsistent" title="The current board has no possible solution" style="color: red;">&#xd8; &#x26a0;</span>
+	  <span id="solution-valid">
+		<span id="inconsistent" title="The current board has no possible solution" style="color: red;">&#xd8; &#x26a0;</span>
+	  </span>
     </td></tr>
-
+	  
   </table>
 
   </td>
