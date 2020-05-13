@@ -11,6 +11,9 @@ import itertools
 
 @csrf_exempt
 def api_solve(request):
+    if settings.DEBUG_DELAY:
+        time.sleep(settings.DEBUG_DELAY)
+    
     payload = json.loads(request.raw_post_data)
     logging.debug('>>' + str(payload))
 

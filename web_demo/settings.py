@@ -112,6 +112,9 @@ STATIC_ROOT = None
 # set to 'None' to bypass process pool for debugging
 CPU_QUOTA = 5. #s
 
+# add a delay when running locally to simulate server latency
+DEBUG_DELAY = 0. #s
+
 try:
     from localsettings import *
 except ImportError:
