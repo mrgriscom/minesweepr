@@ -291,8 +291,6 @@ function undo() {
 
 function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) {
   this.board = board;
-	this.canvas = canvas;
-	this.solution_canvas = solution_canvas;
   this.first_safe = first_safe;
 	this.cursor = (ANALYZER ? new EditCursor(this, cursor_canvas) : null);
 
@@ -313,7 +311,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 		this.draw_ctx = new DrawContext(this, canvas, solution_canvas);
 		board.set_draw(this.draw_ctx);
 		this.draw_ctx.draw_board();
-		reset_canvas(this.solution_canvas);
+		reset_canvas(this.draw_ctx.solution_canvas);
 		
     if (this.first_safety()) {
       this.solve_first_safe();
@@ -330,7 +328,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 
 	this.refresh = function() {
 		if (!ANALYZER) {
-			this.update_info();
+			this.update_stats();
 		} else {
 			this.update_minecount_analysis_mode();
 		}
@@ -340,7 +338,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 	}
 
 	this.set_solution_visibility = function() {
-		$(this.solution_canvas)[this.show_solution() ? 'show' : 'hide']();
+		$(this.draw_ctx.solution_canvas)[this.show_solution() ? 'show' : 'hide']();
 		$('#solution-valid')[this.show_solution() ? 'show' : 'hide']();
 		$('.solution-status').css('visibility', this.show_solution() ? 'visible' : 'collapse');
 		// tooltip handles itself
@@ -378,6 +376,8 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 	}
 		this.board.for_each_cell(function(pos, cell, board) {
 			// don't render for uncovered cells
+			// handle here rather than in cell redraw() because we want old solution to show over newly exposed cells until
+			// updated solution is ready (it just looks better)
 			if (sc.solution != null && !cell.visible) {
 				cell.set({'prob': sc.solution.get_prob(pos, board), 'best_guess': sc.solution.best_guesses[cell.name] != null});
 			} else {
@@ -389,11 +389,10 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 		if (this.solution) {
 			this.solution.render(this.draw_ctx);
 		} else {
-			reset_canvas(this.solution_canvas);
+			reset_canvas(this.draw_ctx.solution_canvas);
 		}
 
 		OVERLAY_UPDATE();
-
 		if (ANALYZER) {
 			// solution is used to update mine counts in analyzer mode
 			this.update_minecount_analysis_mode();
@@ -479,6 +478,9 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
       this.solution = null;
       this.first_move = false;
 	}
+	  // note this is always called even if the move was a no-op, mostly because we need to update mine counts
+	  // in response to flagging changes, and tracking flag changes vs. no-ops is a big PITA; triggering
+	  // refresh() isn't that expensive in comparison
 	  this.onstatechange(changed, this.status == 'in_play');
   }
 
@@ -544,7 +546,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     }
   }
 
-  this.update_info = function() {
+  this.update_stats = function() {
     var mi = this.board.mine_counts();
     var mines_remaining = mi.total - (mi.flagged + mi.flag_error);
     if (this.status == 'win') {
@@ -653,8 +655,8 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
   }
 
   this.mouse_cell = function(e) {
-    var coord = mousePos(e, this.canvas);
-    return this.board.cell_from_xy(coord, this.canvas);
+    var coord = mousePos(e, this.draw_ctx.canvas);
+    return this.board.cell_from_xy(coord, this.draw_ctx.canvas);
   }
 
   this.snapshot = function() {
@@ -678,7 +680,6 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     this.board.restore(snapshot.board_state);
 	  this.refresh();
     this.set_solution(SOLUTIONS[this.seq]);
-
 
 	  if (ANALYZER) {
 		  // analysis mode can change # of mines in board, and this is the only place
@@ -733,7 +734,10 @@ function DrawContext (sess, canvas, solution_canvas) {
 	this.render_cursor = function(pos, canvas) {
 		this.draw(this.board.get_cell(pos), 'render_cursor', canvas, false);
 	}
-	
+
+	// if clear_first is false, canvas as a whole has already been cleared; cell needn't worry about overdrawing itself
+	// if clear_always, always clear due to transparency (i.e., ignore when cell geometry doesn't require pre-clearing
+	// when opaque)
 	this.draw = function(cell, drawfuncname, canvas, clear_first, args, clear_always) {
 		var geom = this.board.topology.geom(cell.pos, canvas);
 		var ctx = canvas.getContext('2d');
@@ -758,6 +762,7 @@ function DrawContext (sess, canvas, solution_canvas) {
 	}
 	this.params = this._params();
 
+	// check if global rendering params have changed and if so propogate to cells
 	this.refresh = function() {
 		var new_params = this._params();
 		var diff = {};
@@ -784,6 +789,8 @@ function EditCursor(sess, canvas) {
 	this.region_is_negative;
 	this.timer;
 	// note init() at bottom
+
+	// subsection: manage internal cursor state
 	
 	this.clear_cursor = function() {
 		this.selected_cells = {};
@@ -828,6 +835,7 @@ function EditCursor(sess, canvas) {
 		this.board.for_each_name(Object.keys(cells), do_);
 	}
 
+	// subsection: handle UI events to update state
 	
 	this.clear = function() {
 		this.clear_cursor();
@@ -887,6 +895,7 @@ function EditCursor(sess, canvas) {
 		this.render();
 	}
 
+	// subsection: handle UI events that apply current state to modify board
 
 	this.set_cell_state = function(num_mines) {
 		var changed = false;
@@ -918,6 +927,7 @@ function EditCursor(sess, canvas) {
 		sess.onstatechange(changed, true, ANALYSIS_SOLVE_TIMEOUT);
 	}
 
+	// subsection: rendering and utils
 	
 	this.render = function() {
 		reset_canvas(this.canvas);
@@ -1052,7 +1062,9 @@ function SolvingContext() {
 }
 
 function new_solving_context(game) {
-  var sol_context = new SolvingContext();
+	var sol_context = new SolvingContext();
+	// async-received solutions will still be stored in the appropriate slot in the undo stack,
+	// even if they are no longer for the current game state
   SOLUTIONS[game.seq] = sol_context;
   return sol_context;
 }

@@ -13,23 +13,12 @@ FONT_OFFSET = ($.browser.mozilla ? .15 : .07);
 FONT_SCALE_LONG = .8;
 HIGHLIGHT_CUR_CELL = 'rgba(0, 0, 0, 0)'; //'rgba(255, 180, 0, .2)';
 HIGHLIGHT_NEIGHBOR = 'rgba(255, 220, 255, .2)';
+SAFE_COLOR = 'rgba(0, 0, 255, .2)';
+MINE_COLOR = 'rgba(255, 0, 0, .2)';
+GUESS_COLOR = '0,255,0';  // variable alpha
+BEST_GUESS_COLOR = '255,255,0';  // variable alpha
 
 EPSILON = 1.0e-6;
-
-function prob_shade (p, best) {
-  if (p < EPSILON) {
-    return 'rgba(0, 0, 255, .2)';
-  } else if (p > 1 - EPSILON) {
-    return 'rgba(255, 0, 0, .2)';
-  } else {
-    var MIN_ALPHA = (best ? .15 : .05);
-    var MAX_ALPHA = .8;
-    var alpha = MIN_ALPHA * (1 - p) + MAX_ALPHA * p;
-    return 'rgba(' + (best ? 255 : 0) + ', 255, 0, ' + alpha + ')';
-  }
-}
-
-
 
 function Board (topology, for_analysis_only) {
   this.topology = topology;
@@ -51,12 +40,7 @@ function Board (topology, for_analysis_only) {
 		  this.cells.push(new Cell());
       }
 		this.for_each_cell(function (pos, cell, board) {
-			var ix = board.topology.cell_ix(pos);
-        cell.pos = pos;      
-        cell.name = board.topology.cell_name(pos);
-        board.cells_by_name[cell.name] = cell;
-		
-		cell.set({state: mine_dist[ix] && !for_analysis_only ? 'mine' : null});
+			cell.init(pos, board, for_analysis_only ? null : mine_dist);
     });
     this.for_each_cell(function (pos, cell, board) {
         board.init_cell_state(pos, cell);
@@ -108,7 +92,7 @@ function Board (topology, for_analysis_only) {
 
   var cascade_overrides_flagged = false;
   //uncover a cell, triggering any cascades
-  //return whether we survived, null if operation not applicable
+  //return whether we survived, null if nothing uncovered
   this.uncover = function (pos, force) {
     // can't do straight up recursion for cascades since very large boards might
     // exceed call stack limit
@@ -453,7 +437,18 @@ function Cell () {
 	// cache if this cell's neighbors differ from those returned by adjacent() due to
 	// deduplication. if yes, list of neighbors; if no, false; if not yet cached, null
 	this._deduped_neighbors;
-	
+
+	this.init = function(pos, board, mine_dist) {
+        this.pos = pos;      
+        this.name = board.topology.cell_name(pos);
+        board.cells_by_name[this.name] = this;
+		
+		var ix = board.topology.cell_ix(pos);
+		this.set({state: mine_dist != null && mine_dist[ix] ? 'mine' : null});
+	}
+
+	// cells will detect changes to their state and redraw themselves as needed. therefore,
+	// all state changes must go through this function. returns a dict of changed (prior) values
 	this.set = function(vals) {
 		var old = {};
 		var that = this;
@@ -469,6 +464,9 @@ function Cell () {
 
 	this.needs_redraw = function(old) {
 		var redraw_board = false;
+		// note: we don't monitor 'prob' for redraw changes, it is just cached so the cell solution
+		// can be redrawn in other circumstances. this is because almost all cells change with a new
+		// solution, thus more efficient to redraw in bulk
 		var redraw_solution = false;
 		if ('visible' in old || 'flagged' in old || ('state' in old && this.visible)) {
 			redraw_board = true;
@@ -591,6 +589,43 @@ function textContext(ctx, g, fill, size, bold) {
   };
 }
 
+function prob_shade (p, best) {
+  if (p < EPSILON) {
+    return SAFE_COLOR;
+  } else if (p > 1 - EPSILON) {
+      return MINE_COLOR;
+  } else {
+    var MIN_ALPHA = (best ? .15 : .05);
+    var MAX_ALPHA = .8;
+    var alpha = MIN_ALPHA * (1 - p) + MAX_ALPHA * p;
+    return 'rgba(' + (best ? BEST_GUESS_COLOR : GUESS_COLOR) + ',' + alpha + ')';
+  }
+}
+
+/* Topo classes implement various board topologies; they must implement the following interface:
+
+[constructor] - sets board dimensions + other optional parameters
+num_cells() - return number of cells on board
+for_each_index(func(pos)) - iterate through the indexes of all cells on the board (index format determined
+  by topology) and call func with each index
+cell_ix(pos) - convert index to the position of that cell in a flat array
+cell_name(pos) - convert index to a human readable name
+adjacent(pos) - return a list of all the cells adjacent to this index; returned cells need not be unique
+increment_ix(ix, axis, dir) - move from index 'ix' to adjacent index along an axis (x/y/z) forward/up (dir:true)
+  or back/down (dir:false). MODIFIES THE INDEX IN-PLACE
+for_select_range(pos0, pos1, func(pos)) - iterate over all the indexes between pos0 and pos1, defined according
+  to some screen-selection modality, and call func for each index. no ordering guarantees between pos0/pos1
+cell_from_xy(p{x,y}, canvas) - return the cell index at canvas coordinates (x,y), null if out of bounds
+geom(pos, canvas) - return a complex object encapsulating the cell's rendering geometry:
+{
+  center: x/y coordinates of the center of the cell,
+  span: width of square cell, or analagous 'diameter' of other-shaped cells
+  path(context, no_margin): a function that, given canvas context, draws the path of the cell's perimeter
+    if 'no_margin', draw path that doesn't include margin between cells (used for clearing) and return
+    true; if a separate no-margin path is not needed for clearing (such as when the perimeter snaps to pixel
+	boundaries), return false (though the path must still be drawn as the return value is merely a recommendation)
+}
+*/
 
 function GridTopo (width, height, wrap, adjfunc) {
   this.width = width;
@@ -769,15 +804,14 @@ function HexGridTopo (width, height) {
   }
 
 	this.geom = function (pos, canvas) {
-		
     var dim = this.cell_dim(canvas);
 		var span = dim - MARGIN;
     var center = [Math.sqrt(3.) / 2. * dim * (pos.c + (pos.r % 2 == 0 ? 1 : .5)), dim * (.75 * pos.r + .5)];
 		var path = function(ctx, no_margin) {
-			var d = (no_margin ? dim : span);
+			var r = .5 * (no_margin ? dim : span);
 			for (var i = 0; i < 6; i++) {
 				var angle = 2*Math.PI / 6. * i;
-				ctx.lineTo(center[0] + .5 * d * Math.sin(angle), center[1] + .5 * d * Math.cos(angle));
+				ctx.lineTo(center[0] + r * Math.sin(angle), center[1] + r * Math.cos(angle));
 			}
 			ctx.closePath();
 			return no_margin;
@@ -1180,6 +1214,7 @@ function Cube3dTopo (width, height, depth) {
       return {x: Math.floor(x), y: Math.floor(y)};
     }
 
+	  // could make a binary search
     for (var z = 0; z < this.d; z++) {
       var c = rev_transform(p.x, p.y, z);
       if (c.x >= 0 && c.x < this.w && c.y >= 0 && c.y < this.h) {
