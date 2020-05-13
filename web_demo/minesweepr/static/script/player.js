@@ -408,7 +408,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     }
 
     var game = this;
-    this.action(function(uncovered) {
+      this.action(function(uncovered) {
         if (type == 'sweep') {
           uncovered.push(pos);
 			return game.board.uncover(pos);
@@ -416,44 +416,43 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 			return game.board.uncover_neighbors(pos, uncovered);
         } else if (type == 'mark-toggle') {
 			game.board.flag(pos, 'toggle');
-			return {survived: null, flags_changed: true};
+			return null;
         }
       });
   }
 
   this.best_move = function() {
     var game = this;
-      var solu = this.solution;
+    var solu = this.solution;
+    this.action(function(uncovered) {
+        var action = false; 
+        var survived = true;
 
-      this.action(function(uncovered) {
-          var final_result = {};
-
-          // we don't add known safe cells to uncovered for efficiency,
+        // we don't add known safe cells to uncovered for efficiency,
         // but update_risk could handle it if we did
 
         if (game.first_safety()) {
-			return game.board.uncover(game.board.safe_cell(), true);
+			game.board.uncover(game.board.safe_cell(), true);
+          action = true;
         } else if (solu) {
           var guesses = Object.keys(solu.best_guesses);	
           var guess = guesses.length > 0 ? choose_rand(guesses) : null;
 
-			solu.each(game.board, function (pos, cell, prob, board) {
-				var result = {};
+          solu.each(game.board, function (pos, cell, prob, board) {
               if (prob < EPSILON) {
-                  result = board.uncover(pos, true);
+                board.uncover(pos, true);
+                action = true;
               } else if (prob > 1. - EPSILON) {
                   board.flag(pos);
-				  // won't require a solution redraw, so don't set flags_changed
-				  result = {survived: null, flags_changed: false};
               } else if (cell.name == guess) {
-                  result = board.uncover(pos, true);
+                  survived = board.uncover(pos, true);
                 uncovered.push(pos);
+                action = true;
               }
-				merge_action_result(final_result, result);
             });
         }
 
-		  return final_result;
+        return (action ? survived : null);
       });
   }
 
@@ -463,10 +462,10 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
       return;
     }
 
-    var uncovered_cells = [];
-    var result = move(uncovered_cells);
+      var uncovered_cells = [];
+      var survived = move(uncovered_cells);
 
-      if (result.survived == false) {
+      if (survived == false) {
 		  // must explicitly check false as null ('no action') doesn't lose game
 		this.status = 'fail';
     } else if (this.board.is_complete(strict_completeness)) {
@@ -474,16 +473,16 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
 		this.status = 'win';
     }
 
-    var changed = (result.survived != null);
+    var changed = (survived != null);
     if (changed) {
       this.update_risk(uncovered_cells);
       this.solution = null;
       this.first_move = false;
 	}
-	  this.onstatechange(changed, result.flags_changed, this.status == 'in_play');
+	  this.onstatechange(changed, this.status == 'in_play');
   }
 
-	this.onstatechange = function(board_changed, flags_changed, do_solve, timeout) {
+	this.onstatechange = function(board_changed, do_solve, timeout) {
 		var that = this;
 		var commit = function() {
 		    that.seq = next_seq();
@@ -700,14 +699,6 @@ function solve_query(board, url, callback, get_state) {
     }, "json");
 }
 
-function merge_action_result(a, b) {
-	// survived == null means 'no action'
-	if (b.survived != null) {
-		a.survived = (a.survived == null ? b.survived : a.survived && b.survived);
-	}
-	a.flags_changed = a.flags_changed || b.flags_changed;
-}
-
 // make a call to solve a degenerate board to avoid cold starts with any
 // cloud function providers
 function warm_api() {
@@ -897,44 +888,34 @@ function EditCursor(sess, canvas) {
 	}
 
 
-	// FIXME
 	this.set_cell_state = function(num_mines) {
 		var changed = false;
-		var flags_changed = false;
 		this.for_cursor(function(pos, cell, board) {
-			var orig = {...cell};
-
 			var hidden = (num_mines == null || num_mines == 'flag');
-			cell.set({
+			var modified = cell.set({
 				visible: !hidden,
 				state: hidden ? 0 : num_mines,
 				flagged: (num_mines == 'flag'),
 			});
 
-			if (orig.visible != cell.visible || orig.state != cell.state) {
+			if ('visible' in modified || 'state' in modified) {
 				changed = true;
 			}
-			if (orig.flagged != cell.flagged) {
-				flags_changed = true;
-			}
 		});
-
-		sess.onstatechange(changed, flags_changed, true, ANALYSIS_SOLVE_TIMEOUT);
+		sess.onstatechange(changed, true, ANALYSIS_SOLVE_TIMEOUT);
 	}
 
-	// FIXME
 	this.incr_cell_state = function(up) {
 		var changed = false;
 		this.for_cursor(function(pos, cell, board) {
 			if (cell.visible && cell.state != 'mine') {
-				var old_state = cell.state;
-				cell.set({state: Math.min(Math.max(cell.state + (up ? 1 : -1), 0), board.topology.adjacent(cell.pos).length)});
-				if (cell.state != old_state) {
+				var modified = cell.set({state: Math.min(Math.max(cell.state + (up ? 1 : -1), 0), board.topology.adjacent(cell.pos).length)});
+				if ('state' in modified) {
 					changed = true;
 				}
 			}
 		});
-		sess.onstatechange(changed, false, true, ANALYSIS_SOLVE_TIMEOUT);
+		sess.onstatechange(changed, true, ANALYSIS_SOLVE_TIMEOUT);
 	}
 
 	

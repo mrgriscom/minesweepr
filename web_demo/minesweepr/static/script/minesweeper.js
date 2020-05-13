@@ -113,18 +113,12 @@ function Board (topology, for_analysis_only) {
     // can't do straight up recursion for cascades since very large boards might
     // exceed call stack limit
 
-    var flags_changed = false;
     var board = this;
     var cascades = [];
     // original top-level function
     var _uncover = function (pos, force_unflag) {
       var cell = board.get_cell(pos);
       if (!cell.visible && (!cell.flagged || force_unflag)) {
-        //cell.visible = true;
-        //if (cell.flagged) {
-        //  flags_changed = true;
-        //}
-        //cell.flagged = false;
 		  cell.set({visible: true, flagged: false});
 		  
         if (cell.state == 'mine') {
@@ -146,7 +140,7 @@ function Board (topology, for_analysis_only) {
     for (var i = 0; i < cascades.length; i++) {
       _uncover(cascades[i], cascade_overrides_flagged);
     }
-    return {survived: survived, flags_changed: flags_changed};
+      return survived;
   }
 
   //uncover all neighbors of a cell, provided the indicated number of neighboring mines
@@ -156,12 +150,11 @@ function Board (topology, for_analysis_only) {
   //uncovered_neighbors is an array -- only a param so we can pass the info back to
   //the parent; should be empty initially
   this.uncover_neighbors = function(pos, uncovered_neighbors) {
-    var final_result = {};
-    uncovered_neighbors = uncovered_neighbors || [];
+      neighbors_to_uncover = [];
     var cell = this.get_cell(pos);
 
     if (!cell.visible) {
-      return final_result;
+      return;
     }
 
     var num_flagged_neighbors = 0;
@@ -169,20 +162,26 @@ function Board (topology, for_analysis_only) {
         if (neighb.flagged) {
           num_flagged_neighbors++;
         } else if (!neighb.visible) {
-          uncovered_neighbors.push(pos);
+			neighbors_to_uncover.push(pos);
         }
       });
 
-    if (num_flagged_neighbors != cell.state || uncovered_neighbors.length == 0) {
-      return final_result;
+    if (num_flagged_neighbors != cell.state || neighbors_to_uncover.length == 0) {
+      return;
     }
 
+    var survived = true;
     var board = this;
-    $.each(uncovered_neighbors, function(i, pos) {
+    $.each(neighbors_to_uncover, function(i, pos) {
         var result = board.uncover(pos);
-		merge_action_result(final_result, result);
+        if (result == false) {
+          // need to ignore result == null: (cell was already uncovered due to
+          // cascade from previous neighbor)
+          survived = false;
+        }
+		uncovered_neighbors.push(pos);
       });
-      return final_result;
+    return survived;
   }
 
   //'flag' a cell as a mine; mode = true (flag; default), false (clear flag), or 'toggle'
@@ -465,6 +464,7 @@ function Cell () {
 			}
 		});
 		this.needs_redraw(old);
+		return old;
 	}
 
 	this.needs_redraw = function(old) {
