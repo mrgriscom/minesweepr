@@ -623,7 +623,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
             }
         }
         if (changed) {
-            this.cursor.commit_board_change();
+            this.cursor.commit_state(changed);
         }
     }
     
@@ -910,7 +910,7 @@ function EditCursor(sess, canvas) {
                 changed = true;
             }
         });
-        sess.onstatechange(changed, true, ANALYSIS_SOLVE_TIMEOUT);
+        this.commit_state(changed);
     }
     
     this.incr_cell_state = function(up) {
@@ -923,6 +923,12 @@ function EditCursor(sess, canvas) {
                 }
             }
         });
+        if (changed) {
+            this.commit_state(changed);
+        }
+    }
+
+    this.commit_state = function(changed) {
         sess.onstatechange(changed, true, ANALYSIS_SOLVE_TIMEOUT);
     }
     
