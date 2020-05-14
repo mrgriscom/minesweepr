@@ -781,10 +781,24 @@ function HexGridTopo (width, height) {
     }
 
     this.increment_ix = function(ix, axis, dir) {
-        var dim = {x: 'c', y: 'r'}[axis];
-        var sz = {x: this.row_width(ix.r), y: this.height}[axis];
-        ix[dim] = mod(ix[dim] + (dir ? 1 : -1), sz);
-        ix.c = Math.min(ix.c, this.row_width(ix.r) - 1);
+        if (axis == 'x') {
+            ix.c = mod(ix.c + (dir ? 1 : -1), this.row_width(ix.r));
+        } else {
+            var new_r = mod(ix.r + (dir ? 1 : -1), this.height);
+            if ((ix.r % 2) == (new_r % 2)) {
+                // vertical wraparound where tiles don't mesh
+                ix.c = ix.c + ((axis == 'y') ^ dir ? -1 : 1);
+            } else {
+                ix.c = ix.c + ((axis == 'y') ^ dir ? 0 : 1) - (ix.r % 2);
+            }
+            ix.r = new_r;
+            // horizontal wraparound -- don't use mod so as to ensure we wrap to edge
+            if (ix.c >= this.row_width(ix.r)) {
+                ix.c = 0;
+            } else if (ix.c < 0) {
+                ix.c = this.row_width(ix.r) - 1;
+            }
+        }
     }
 
     this.for_select_range = function(pos0, pos1, do_) {
