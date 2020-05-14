@@ -182,8 +182,11 @@ function parsemine(raw, surface_area) {
         k = +raw;
         if (k > 0. && k < 1.) {
             mode = 'prob';
+        } else {
+            k = Math.round(k);
         }
     }
+    k = Math.max(isNaN(k) ? 0 : k, 0);
     return {mode: mode, k: k};
 }
 
@@ -219,10 +222,12 @@ function writeminespec(board) {
 
 function get_topo() {
     var topo_type = $('input[name="topo"]:checked').val();
-    var width = +$('#width').val();
-    var height = +$('#height').val();
-    var depth = +$('#depth').val();
-    return new_topo(topo_type, width, height, depth);
+    var parse = function(id) {
+        var val = Math.round(+$(id).val());
+        val = isNaN(val) ? 0 : val;
+        return Math.max(val, 1);
+    }
+    return new_topo(topo_type, parse('#width'), parse('#height'), parse('#depth'));
 }
 
 function new_game() {

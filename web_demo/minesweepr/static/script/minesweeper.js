@@ -26,7 +26,7 @@ function Board (topology, for_analysis_only) {
     this.cells_by_name = {};
 
     this.populate_n = function (num_mines) {
-        this.num_mines = num_mines;
+        this.num_mines = Math.min(num_mines, for_analysis_only ? 'Infinity' : this.topology.num_cells());
         this.init(this.n_dist());
     }
 
