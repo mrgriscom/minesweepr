@@ -36,6 +36,7 @@ $(document).ready(function() {
             return false;
         });
         $('#edit_legend').hide();
+        $('#export').hide();
     } else {
         registerCursorHandlers();
         $('#mines').change(function() {
@@ -61,6 +62,8 @@ $(document).ready(function() {
     $('#swapmineformat').click(function(e) {
         $('#mines').val(swapmineformat());
     });
+
+    $('#export').click(export_url);
     
     UI_CANVAS.mousemove(hover_overlays);
     UI_CANVAS.mouseout(function(e) {
@@ -173,6 +176,11 @@ function get_preset_board() {
     var params = new URLSearchParams(window.location.search);
     var board = parse_board(params.get('board'));
     if (board != null && !ANALYZER) {
+        // TODO, in order to support:
+        // need to verify validity of board (don't allow inconsistent states)
+        // handle first-safe mine swapping satisfactorily
+        // update state vars like first_move and total_risk
+        // allow visible/exploded mines from the start?
         console.log('pre-set boards not supported yet in gameplay mode');
         board = null;
     }
@@ -1220,6 +1228,16 @@ function resize_canvas() {
         GAME.draw_ctx.draw_board();
         GAME.draw_ctx.draw_solution();
     }
+}
+
+function export_url() {
+    window.history.replaceState(null, null, '?' + GAME.board.export());
+    
+    var $temp = $("<input>");
+    $("body").append($temp);
+    $temp.val(window.location.href).select();
+    document.execCommand("copy");
+    $temp.remove();
 }
 
 function init_legend() {
