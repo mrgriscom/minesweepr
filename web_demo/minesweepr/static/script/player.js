@@ -69,6 +69,7 @@ $(document).ready(function() {
     UI_CANVAS.mouseout(function(e) {
         hover_overlays(null);
     });
+    hover_overlays(null);  // hide tooltip div
     $('#win').hide();
     $('#fail').hide();
     $('#inconsistent').hide();
