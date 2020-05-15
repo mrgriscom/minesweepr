@@ -25,6 +25,10 @@ body {
   font-family: sans-serif;
 }
 
+td {
+  white-space: nowrap;
+}
+
 .help {
   font-size: x-small;
   font-style: italic;
@@ -78,7 +82,6 @@ td {
   font-weight: bold;
   text-align: right;
   vertical-align: top;
-  white-space: nowrap;
 }
 
 #canvas_stack {
@@ -112,7 +115,14 @@ td {
 #legend td {
   font-size: 75%;
   padding: 3px;
-  white-space: nowrap;
+}
+
+.dimlabel {
+  padding-right: 0.4em;
+}
+
+.subseqlabel {
+  padding-left: 0.6em;
 }
 
 {% block content_style %}
@@ -134,7 +144,7 @@ td {
 
   <table>
     <tr>
-      <td valign="top">Topology:&nbsp;&nbsp;</td>
+      <td valign="top">Topology:</td>
       <td>
         <table>
           <tr>
@@ -144,9 +154,9 @@ td {
               <input id="topo-cube2d" name="topo" type="radio" value="cube2d"> <label for="topo-cube2d">cube (surface)</label><br>
             </td>
             <td>
-              &nbsp;<input id="topo-cube3d" name="topo" type="radio" value="cube3d"> <label for="topo-cube3d">cube (3D)</label><br>
-              &nbsp;<input id="topo-hex" name="topo" type="radio" value="hex"> <label for="topo-hex">hex-grid</label><br>
-              &nbsp;<input id="topo-grid2" name="topo" type="radio" value="grid2"> <label for="topo-grid2">grid+1</label><br>
+              <input id="topo-cube3d" name="topo" type="radio" value="cube3d"> <label for="topo-cube3d">cube (3D)</label><br>
+              <input id="topo-hex" name="topo" type="radio" value="hex"> <label for="topo-hex">hex-grid</label><br>
+              <input id="topo-grid2" name="topo" type="radio" value="grid2"> <label for="topo-grid2">grid+1</label><br>
             </td>
           </tr>
         </table>
@@ -155,17 +165,17 @@ td {
   </table>
   <table>
     <tr>
-      <td width="1%">Width:&nbsp;&nbsp;</td>
-      <td><input id="width" type="text" style="width: 6em;">&nbsp;&nbsp;</td>
-      <td width="1%">Height:&nbsp;&nbsp;</td>
-      <td><input id="height" type="text" style="width: 6em;">&nbsp;&nbsp;</td>
-      <td><span id="depth_lab">Depth:&nbsp;&nbsp;</span></td>
-      <td><input id="depth" type="text" style="width: 6em;"></td>
+      <td width="1%" class="dimlabel">Width:</td>
+      <td><input id="width" type="text" style="width: 5em;"></td>
+      <td width="1%" class="dimlabel subseqlabel">Height:</td>
+      <td><input id="height" type="text" style="width: 5em;"></td>
+      <td class="dimlabel"><span id="depth_lab" class="subseqlabel">Depth:</span></td>
+      <td><input id="depth" type="text" style="width: 5em;"></td>
     </tr>
     <tr>
-      <td>Mines:&nbsp;&nbsp;</td>
-      <td><input id="mines" type="text" style="width: 6em;"></td>
-      <td colspan="4" class="help">
+      <td class="dimlabel">Mines:</td>
+      <td><input id="mines" type="text" style="width: 5em;"></td>
+      <td colspan="4" class="help subseqlabel">
         <div style="display: inline-block;">total # of mines OR<br><nobr>mine density, 0%-100%</nobr></div>
         <img id="swapmineformat" style="margin-left: .2em; cursor: pointer;" src="{{ STATIC_URL }}img/swap.png">
       </td>
@@ -199,39 +209,33 @@ td {
   </tr>
   <tr>
   <td style="vertical-align: bottom;">
-
     <style>
-      dl {
-        display: block;
-        overflow: hidden;
+      #edit_legend td {
+        font-size: 110%;
+        line-height: .9em;
       }
 
-      dt {
-        float: left;
-        clear: both;
-        width: 5em;
+      .dt {
         text-align: right;
-        padding-right: 0.2em;
+        padding: 0 0.2em 0 0;
         font-weight: bold;
-        white-space: nowrap;
       }
 
-      dd {
-        float: left;
-        margin-left: 0.6em;
+      .dd {
+        padding: 0 0 0 0.6em;
       }
     </style>
-    <dl id="edit_legend" class="help" style="font-size: 80%; margin-bottom: .5em;">
-      <dt>&#x2194;&#x2195;</dt><dd>navigate</dd>
-      <dt>pgup/dn</dt><dd>navigate Z dimension</dd>
-      <dt>del</dt><dd>set as covered</dd>
-      <dt>spc</dt><dd>set as blank</dd>
-      <dt>0&ndash;9</dt><dd>set cell count</dd>
-      <dt>+/&ndash;</dt><dd>incr/decr cell count</dd>
-      <dt>f</dt><dd>flag cell</dd>
-      <dt>m</dt><dd>force mine</dd>
-      <dt>esc</dt><dd>hide cursor</dd>
-    </dl>
+    <table id="edit_legend" class="help" style="margin-bottom: .5em;">
+      <tr><td class="dt">&#x2194;&#x2195;</td><td class="dd">navigate</td></tr>
+      <tr><td class="dt">pgup/dn</td><td class="dd">navigate Z dimension</td></tr>
+      <tr><td class="dt">del</td><td class="dd">set as covered</td></tr>
+      <tr><td class="dt">spc</td><td class="dd">set as blank</td></tr>
+      <tr><td class="dt">0&ndash;9</td><td class="dd">set cell count</td></tr>
+      <tr><td class="dt">+/&ndash;</td><td class="dd">incr/decr cell count</td></tr>
+      <tr><td class="dt">f</td><td class="dd">flag cell</td></tr>
+      <tr><td class="dt">m</td><td class="dd">force mine</td></tr>
+      <tr><td class="dt">esc</td><td class="dd">hide cursor</td></tr>
+    </table>
     
   <div id="stepdiv" style="text-align: right;"><span class="help">(enter)</span>&nbsp;<a id="step" href="#"><b>best move</b></a></div>
   <div id="undodiv" style="text-align: right;"><span class="help">(ctrl+z)</span>&nbsp;<nobr><a id="undo" href="#"><b>undo</b></a></nobr></div>
@@ -245,7 +249,7 @@ td {
 
     <table style="height: 100%; width: 10em; vertical-align: top;">
     <tr id="minesleft"><td># mines left:</td><td id="num_mines" class="gamestat">&mdash;</td></tr>
-    <tr id="totalrisk"><td>total accumulated risk:</td><td id="risk" class="gamestat">&mdash;</td></tr>
+    <tr id="totalrisk"><td style="white-space: normal;">total accumulated risk:</td><td id="risk" class="gamestat">&mdash;</td></tr>
     <tr id="solving" class="solution-status" style="height: 35px;"><td style="vertical-align: top;">solving&hellip;</td><td class="gamestat"><img src="{{ STATIC_URL }}img/loading.gif"></td></tr>
     <tr id="solved" class="solution-status"><td style="vertical-align: top;">solved in:</td><td class="gamestat"><span id="solve_time"></span></td></tr>
       <tr><td colspan="2" height="100%" style="text-align: center; vertical-align: bottom; font-weight: bold; font-size: 48px;">
