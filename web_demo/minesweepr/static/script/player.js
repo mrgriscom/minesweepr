@@ -74,12 +74,12 @@ $(document).ready(function() {
     if (!ANALYZER) {
         shortcut.add('enter', function() { GAME.best_move(); });
     }
-    shortcut.add('ctrl+enter', new_game);
+    shortcut.add('ctrl+enter', function() { new_game(); });
     shortcut.add('ctrl+z', undo);
     shortcut.add('ctrl+left', undo);
 
     set_defaults();
-    new_game();
+    new_game(get_preset_board());
 });
 
 function registerCursorHandlers() {
@@ -122,15 +122,61 @@ function registerCursorHandlers() {
     shortcut.add('-', function() { GAME.cursor.incr_cell_state(false); }, {type: 'keypress', disable_in_input: true});
 }
 
+function get_url_defaults() {
+    var params = new URLSearchParams(window.location.search);
+
+    var topo = params.get('topo');
+    if (topo != null) {
+        topo = topo.toLowerCase();
+        var match = false;
+        $.each($('input[name="topo"]'), function(i, e) {
+            if (topo == $(e).val()) {
+                match = true;
+                return false;
+            }
+        });
+        if (!match) {
+            console.log('don\'t recognize topo type ' + topo);
+            topo = null;
+        }
+    }
+    topo = topo || 'grid';
+
+    return {
+        topo: topo,
+        w: params.get('w'),
+        h: params.get('h'),
+        d: params.get('d'),
+        mines: params.get('mines'),
+    };
+}
+
 function set_defaults() {
     cached_dimensions = {_2d: [30, 16, null, 99], _3d: [6, 10, 8, 80]};
     active_dimension = null;
+
+    var defaults = get_url_defaults();
+    $.each(['w', 'h', 'd', 'mines'], function(i, e) {
+        if (defaults[e] != null) {
+            cached_dimensions[topo_dim(defaults.topo)][i] = defaults[e];
+        }
+    });
     
-    selectChoice($('input[name="topo"][value="grid"]'));
+    selectChoice($('input[name="topo"][value="' + defaults.topo + '"]'));
     selectChoice($('#first_safe'), !ANALYZER);
     selectChoice($('#show_mines'), false);
     selectChoice($('#show_sol'));
     selectChoice($('#highlighting'));
+}
+
+function get_preset_board() {
+    var params = new URLSearchParams(window.location.search);
+    var board = parse_board(params.get('board'));
+    if (board != null && !ANALYZER) {
+        console.log('pre-set boards not supported yet in gameplay mode');
+        board = null;
+    }
+    return board;
 }
 
 function get_setting(name) {
@@ -230,11 +276,11 @@ function get_topo() {
     return new_topo(topo_type, parse('#width'), parse('#height'), parse('#depth'));
 }
 
-function new_game() {
+function new_game(board_data) {
     var first_safe = get_setting('first_safe');
     var topo = get_topo();
     var minespec = parsemine($('#mines').val(), topo.num_cells());
-    var board = new_board(topo, minespec);
+    var board = new_board(topo, minespec, board_data);
     GAME = new GameSession(board, $('#game_canvas')[0], $('#solution')[0], $('#cursor')[0], first_safe);
     
     game_reset();
@@ -247,33 +293,37 @@ function game_reset() {
 }
 
 function new_topo(type, w, h, d) {
-    if (type == 'grid') {
-        return new GridTopo(w, h);
-    } else if (type == 'torus') {
-        return new GridTopo(w, h, true);
-    } else if (type == 'grid2') {
-        return new GridTopo(w, h, false, function(topo, pos, do_) {
-            if (topo.wrap) {
-                throw 'adjacency logic doesn\'t support wrapping';
-            }
-            topo.for_radius(pos, 2, function(ix) {
-                if (Math.abs(pos.r - ix.r) + Math.abs(pos.c - ix.c) <= 3) {
-                    do_(ix);
+    var topo = (function() {
+        if (type == 'grid') {
+            return new GridTopo(w, h);
+        } else if (type == 'torus') {
+            return new GridTopo(w, h, true);
+        } else if (type == 'grid2') {
+            return new GridTopo(w, h, false, function(topo, pos, do_) {
+                if (topo.wrap) {
+                    throw 'adjacency logic doesn\'t support wrapping';
                 }
+                topo.for_radius(pos, 2, function(ix) {
+                    if (Math.abs(pos.r - ix.r) + Math.abs(pos.c - ix.c) <= 3) {
+                        do_(ix);
+                    }
+                });
             });
-        });
-    } else if (type == 'hex') {
-        return new HexGridTopo(w, h);
-    } else if (type == 'cube3d') {
-        return new Cube3dTopo(w, h, d);
-    } else if (type == 'cube2d') {
-        return new CubeSurfaceTopo(w, h, d);
-    }
+        } else if (type == 'hex') {
+            return new HexGridTopo(w, h);
+        } else if (type == 'cube3d') {
+            return new Cube3dTopo(w, h, d);
+        } else if (type == 'cube2d') {
+            return new CubeSurfaceTopo(w, h, d);
+        }
+    })();
+    topo.type = type;
+    return topo;
 }
 
-function new_board(topo, minespec) {
+function new_board(topo, minespec, board_data) {
     var board = new Board(topo, ANALYZER);
-    board[{'count': 'populate_n', 'prob': 'populate_p'}[minespec.mode]](minespec.k);
+    board[{'count': 'populate_n', 'prob': 'populate_p'}[minespec.mode]](minespec.k, board_data);
     return board;
 }
 

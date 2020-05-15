@@ -25,22 +25,28 @@ function Board (topology, for_analysis_only) {
     this.cells = [];
     this.cells_by_name = {};
 
-    this.populate_n = function (num_mines) {
+    this.populate_n = function (num_mines, board) {
         this.num_mines = Math.min(num_mines, for_analysis_only ? 'Infinity' : this.topology.num_cells());
-        this.init(this.n_dist());
+        this.init(board, 'n_dist');
     }
 
-    this.populate_p = function (mine_prob) {
+    this.populate_p = function (mine_prob, board) {
         this.mine_prob = mine_prob;
-        this.init(this.p_dist());
+        this.init(board, 'p_dist');
     }
 
-    this.init = function (mine_dist) {
+    this.init = function (cell_data, distr_func) {
+        if (cell_data != null && cell_data.length != this.topology.num_cells()) {
+            console.log('pre-filled board is wrong size');
+            cell_data = null;
+        }
+        cell_data = cell_data || (for_analysis_only ? null : this[distr_func]());
+        
         for (var i = 0; i < this.topology.num_cells(); i++) {
             this.cells.push(new Cell());
         }
         this.for_each_cell(function (pos, cell, board) {
-            cell.init(pos, board, for_analysis_only ? null : mine_dist);
+            cell.init(pos, board, cell_data);
         });
         this.for_each_cell(function (pos, cell, board) {
             board.init_cell_state(pos, cell);
@@ -79,7 +85,7 @@ function Board (topology, for_analysis_only) {
     }
 
     this.init_cell_state = function(pos, cell) {
-        if (cell.state != 'mine') {
+        if (cell.state != 'mine' && !cell.visible) {
             var count = 0;
             this.for_each_neighbor(pos, function (pos, neighb, board) {
                 if (neighb.state == 'mine') {
@@ -191,7 +197,7 @@ function Board (topology, for_analysis_only) {
     this.n_dist = function () {
         m = [];
         for (var i = 0; i < this.num_cells(); i++) {
-            m[i] = (i < this.num_mines);
+            m[i] = {state: (i < this.num_mines ? 'mine' : null)};
         }
         shuffle(m);
         return m;
@@ -200,7 +206,7 @@ function Board (topology, for_analysis_only) {
     this.p_dist = function () {
         m = [];
         for (var i = 0; i < this.num_cells(); i++) {
-            m[i] = (Math.random() < this.mine_prob);
+            m[i] = {state: (Math.random() < this.mine_prob ? 'mine' : null)};
         }
         return m;
     }
@@ -420,6 +426,42 @@ function Board (topology, for_analysis_only) {
             this.mine_prob = snapshot.mine_prob;
         }
     }
+
+    this.export_board_contents = function() {
+        var s = '';
+        var last_ix = null;
+        this.for_each_cell(function(pos, cell, board) {
+            if (last_ix != null) {
+                var max_diff_rank = board.topology.axes.length;
+                $.each(pos, function(k, v) {
+                    if (last_ix[k] != v) {
+                        max_diff_rank = Math.min(max_diff_rank, board.topology.axes.indexOf(k));
+                    }
+                });
+                for (var i = max_diff_rank; i < board.topology.axes.length - 1; i++) {
+                    s += board_char('separator');
+                }
+            }
+            last_ix = pos;
+
+            s += cell.toChar();
+        });
+        return s;
+    }
+
+    this.export = function() {
+        var qs = new URLSearchParams();
+        if (this.topology.type != 'grid') {
+            qs.set('topo', this.topology.type);
+        }
+        $.each(this.topology.dims(), function(i, e) {
+            qs.set(['w', 'h', 'd'][i], e);
+        });
+        qs.set('mines', this.num_mines != null ? this.num_mines : (this.mine_prob < 1. ? this.mine_prob : this.topology.num_cells()));
+        // forego over-aggressive escaping
+        //qs.set('board', this.export_board_contents());
+        return qs.toString() + '&board=' + this.export_board_contents();
+    }
 }
 
 function Cell () {
@@ -438,13 +480,15 @@ function Cell () {
     // deduplication. if yes, list of neighbors; if no, false; if not yet cached, null
     this._deduped_neighbors;
 
-    this.init = function(pos, board, mine_dist) {
+    this.init = function(pos, board, init_board_state) {
         this.pos = pos;      
         this.name = board.topology.cell_name(pos);
         board.cells_by_name[this.name] = this;
-        
-        var ix = board.topology.cell_ix(pos);
-        this.set({state: mine_dist != null && mine_dist[ix] ? 'mine' : null});
+
+        if (init_board_state != null) {
+            var ix = board.topology.cell_ix(pos);
+            this.set(init_board_state[ix]);
+        }
     }
 
     // cells will detect changes to their state and redraw themselves as needed. therefore,
@@ -576,6 +620,28 @@ function Cell () {
 
         ctx.restore();
     }
+
+    this.toChar = function() {
+        if (this.visible) {
+            if (this.state == 'mine') {
+                return board_char('visible_mine');
+            } else if (this.state == 0) {
+                return board_char('blank')
+            } else {
+                var s = '' + this.state;
+                if (s.length > 1) {
+                    s = board_char('compound_start') + s + board_char('compound_end');
+                }
+                return s;
+            }
+        } else {
+            if (this.flagged) {
+                return board_char(this.state == 'mine' ? 'flagged_mine' : 'flag_incorrect');
+            } else {
+                return board_char(this.state == 'mine' ? 'mine' : 'covered');
+            }
+        }
+    }
 }
 
 function textContext(ctx, g, fill, size, bold) {
@@ -602,29 +668,115 @@ function prob_shade (p, best) {
     }
 }
 
+// query strings are case insensitive
+// characters have been chosen to cause minimal headaches with markdown
+ALPHABET = {
+    // visible cell, no neighboring mines (equivalent to '0')
+    blank: '.',
+    // covered cell with no mine underneath
+    covered: 'x',
+    // covered cell with mine underneath
+    mine: 'o',
+    // flagged cell with mine underneath
+    flagged_mine: 'f',
+    // flagged cell with no mine underneath
+    flag_incorrect: '!',
+    // visible (exploded in gameplay mode) mine
+    visible_mine: 'm',
+    // delimiter for cells whose count > 1 digit
+    compound_start: '(',
+    compound_end: ')',
+    // delimiter between lines/layers (ignored on read)
+    separator: ':',
+}
+function board_char(type) {
+    var c = ALPHABET[type];
+    if (c == null) {
+        throw 'invalid char type ' + type;
+    }
+    return c;
+}
+
+function parse_board(s) {
+    if (s == null) {
+        return null;
+    }
+
+    var MAX_MINE_DIGITS = 2;
+    var states = {}
+    states[board_char('covered')] = {};
+    states[board_char('mine')] = {state: 'mine'};
+    states[board_char('flag_incorrect')] = {flagged: true};
+    states[board_char('flagged_mine')] = {flagged: true, state: 'mine'};
+    states[board_char('visible_mine')] = {visible: true, state: 'mine'};
+    states[board_char('blank')] = {visible: true, state: 0};
+    for (var i = 0; i < 10; i++) {
+        states['' + i] = {visible: true, state: i};
+    }
+        
+    result = [];
+    compound_start = null;
+    for (var i = 0; i < s.length; i++) {
+        var c = s[i];
+        var e = null;
+        if (compound_start == null) {
+            if (c == board_char('compound_start')) {
+                compound_start = i;
+            } else {
+                e = states[c.toLowerCase()];
+            }
+        } else if (c == board_char('compound_end')) {
+            var substr = s.substring(compound_start + 1, i);
+            var count = +substr
+            if (substr == '' || isNaN(count) || count < 0 || count != Math.floor(count)) {
+                result = null;
+                break;
+            }
+            e = {visible: true, state: count};
+            compound_start = null;
+        } else if (i - compound_start == MAX_MINE_DIGITS + 1) {
+            result = null;
+            break;
+        }
+        if (e != null) {
+            result.push(e);
+        }
+    }
+    if (compound_start != null) {
+        result = null;
+    }
+    if (result == null) {
+        console.log('board parse error');
+    }
+    return result;
+}
+
 /* Topo classes implement various board topologies; they must implement the following interface:
 
-   [constructor] - sets board dimensions + other optional parameters
-   num_cells() - return number of cells on board
-   for_each_index(func(pos)) - iterate through the indexes of all cells on the board (index format determined
-   by topology) and call func with each index
-   cell_ix(pos) - convert index to the position of that cell in a flat array
-   cell_name(pos) - convert index to a human readable name
-   adjacent(pos) - return a list of all the cells adjacent to this index; returned cells need not be unique
-   increment_ix(ix, axis, dir) - move from index 'ix' to adjacent index along an axis (x/y/z) forward/up (dir:true)
-   or back/down (dir:false). MODIFIES THE INDEX IN-PLACE
-   for_select_range(pos0, pos1, func(pos)) - iterate over all the indexes between pos0 and pos1, defined according
-   to some screen-selection modality, and call func for each index. no ordering guarantees between pos0/pos1
-   cell_from_xy(p{x,y}, canvas) - return the cell index at canvas coordinates (x,y), null if out of bounds
-   geom(pos, canvas) - return a complex object encapsulating the cell's rendering geometry:
-   {
-   center: x/y coordinates of the center of the cell,
-   span: width of square cell, or analagous 'diameter' of other-shaped cells
-   path(context, no_margin): a function that, given canvas context, draws the path of the cell's perimeter
-   if 'no_margin', draw path that doesn't include margin between cells (used for clearing) and return
-   true; if a separate no-margin path is not needed for clearing (such as when the perimeter snaps to pixel
-   boundaries), return false (though the path must still be drawn as the return value is merely a recommendation)
-   }
+  [constructor] - sets board dimensions + other optional parameters
+  type - radio button id for this topology type (set externally)
+  axes - list of axes that make up this topology's index format, ordered most-significant to least
+  dims() - return topo's dimensions in width/height/depth order (only including those which are relevant)  
+  num_cells() - return number of cells on board
+  for_each_index(func(pos)) - iterate through the indexes of all cells on the board (index format determined
+    by topology) and call func with each index. iteration order MUST match 'axes'
+  cell_ix(pos) - convert index to the position of that cell in a flat array
+  cell_name(pos) - convert index to a human readable name
+  adjacent(pos) - return a list of all the cells adjacent to this index; returned cells need not be unique
+  increment_ix(ix, axis, dir) - move from index 'ix' to adjacent index along an axis (x/y/z) forward/up (dir:true)
+    or back/down (dir:false). MODIFIES THE INDEX IN-PLACE
+  for_select_range(pos0, pos1, func(pos)) - iterate over all the indexes between pos0 and pos1, defined according
+    to some screen-selection modality, and call func for each index. no ordering guarantees between pos0/pos1
+  cell_from_xy(p{x,y}, canvas) - return the cell index at canvas coordinates (x,y), null if out of bounds
+  geom(pos, canvas) - return a complex object encapsulating the cell's rendering geometry:
+  {
+    center: x/y coordinates of the center of the cell,
+    span: width of square cell, or analagous 'diameter' of other-shaped cells
+    path(context, no_margin): a function that, given canvas context, draws the path of the cell's perimeter
+      if 'no_margin', draw path that doesn't include margin between cells (used for clearing) and return
+      true; if a separate no-margin path is not needed for clearing (such as when the perimeter snaps to pixel
+      boundaries), return false (though the path must still be drawn as the return value is merely a recommendation)
+  }
 */
 
 function GridTopo (width, height, wrap, adjfunc) {
@@ -632,6 +784,9 @@ function GridTopo (width, height, wrap, adjfunc) {
     this.height = height;
     this.wrap = wrap;
     this.adjfunc = adjfunc;
+    this.dims = function() {
+        return [this.width, this.height];
+    }
 
     this.cell_name = function (pos) {
         return pad_to(pos.r + 1, this.height) + '-' + pad_to(pos.c + 1, this.width);
@@ -662,6 +817,7 @@ function GridTopo (width, height, wrap, adjfunc) {
             false, do_);
     }
     
+    this.axes = ['r', 'c'];
     this.for_range = function(x0, x1, y0, y1, wrap, do_) {
         if (!wrap) {
             x0 = Math.max(x0, 0);
@@ -733,6 +889,9 @@ function GridTopo (width, height, wrap, adjfunc) {
 function HexGridTopo (width, height) {
     this.width = width;
     this.height = height;
+    this.dims = function() {
+        return [this.width, this.height];
+    }
 
     this.cell_name = function (pos) {
         return pad_to(pos.r + 1, this.height) + '-' + pad_to(pos.c + 1, this.width + 1);
@@ -742,6 +901,7 @@ function HexGridTopo (width, height) {
         return pos.r * this.width + Math.floor(pos.r / 2) + pos.c;
     }
 
+    this.axes = ['r', 'c'];
     this.for_each_index = function(do_) {
         for (var r = 0; r < this.height; r++) {
             for (var c = 0; c < this.row_width(r); c++) {
@@ -860,7 +1020,10 @@ function CubeSurfaceTopo (width, height, depth) {
     this.width = width;
     this.height = height;
     this.depth = depth;
-
+    this.dims = function() {
+        return [this.width, this.height, this.depth];
+    }
+    
     //direction: u=0, r=1, d=2, l=3
     //orientation: 0=0, 90=1, 180=2, 270=3
     this.face_adj = [
@@ -891,6 +1054,7 @@ function CubeSurfaceTopo (width, height, depth) {
         return ix + pos.r * this.face_dim(pos.face).w + pos.c;
     }
 
+    this.axes = ['face', 'r', 'c'];
     this.for_each_index = function(do_) {
         for (var f = 1; f <= 6; f++) {
             var ext = this.face_dim(f);
@@ -1088,6 +1252,9 @@ function Cube3dTopo (width, height, depth) {
     this.w = width;
     this.h = height;
     this.d = depth;
+    this.dims = function() {
+        return [this.w, this.h, this.d];
+    }
 
     this.cell_name = function (pos) {
         return pad_to(pos.x + 1, this.w) + '-' + pad_to(pos.y + 1, this.h) + '-' + pad_to(pos.z + 1, this.d);
@@ -1119,6 +1286,7 @@ function Cube3dTopo (width, height, depth) {
             do_);
     }
     
+    this.axes = ['z', 'y', 'x'];
     this.for_range = function(x0, x1, y0, y1, z0, z1, do_) {
         x0 = Math.max(x0, 0);
         y0 = Math.max(y0, 0);
@@ -1126,9 +1294,9 @@ function Cube3dTopo (width, height, depth) {
         x1 = Math.min(x1, this.w - 1);
         y1 = Math.min(y1, this.h - 1);
         z1 = Math.min(z1, this.d - 1);
-        for (var x = x0; x <= x1; x++) {
+        for (var z = z0; z <= z1; z++) {
             for (var y = y0; y <= y1; y++) {
-                for (var z = z0; z <= z1; z++) {
+                for (var x = x0; x <= x1; x++) {
                     do_({x: x, y: y, z: z});
                 }
             }
