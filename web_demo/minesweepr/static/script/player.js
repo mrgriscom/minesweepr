@@ -1165,13 +1165,15 @@ var OVERLAY_UPDATE = function(){};
 var cellname_in_tooltip = false;
 function prob_tooltip(pos, mousePos) {
     var show = false;
-    if (pos && GAME.show_solution()) {
-        var prob = GAME.board.get_cell(pos).prob;
-        show = (prob > EPSILON && prob < 1. - EPSILON);
-    }
-    
-    if (cellname_in_tooltip && pos) {
-        show = true;
+    if (pos) {
+        var cell = GAME.board.get_cell(pos);
+        if (GAME.show_solution()) {
+            var prob = cell.prob;
+            show = (prob > EPSILON && prob < 1. - EPSILON);
+        }
+        if (cellname_in_tooltip) {
+            show = true;
+        }
     }
     
     if (show) {
