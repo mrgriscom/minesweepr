@@ -21,6 +21,69 @@ function skew_tx(N, c) {
 EPSILON = 1e-6
 
 function blah(N, c) {
+    var canvas = $('#canvas')[0];
+    var ctx = canvas.getContext('2d');
+    ctx.resetTransform();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(1, -1);
+    ctx.translate(0, -canvas.height);
+    ctx.scale(200, 200);
+    ctx.translate(1.1, .66);    
+    ctx.transform(1, 0, -.5, .5*Math.sqrt(3), 0, 0); 
+    
+    var HEX = true;
+    
+    var sktx = skew_tx(N, c);
+    var tx = function(x, y) { return transform([x, y], sktx[0], sktx[1]); }
+    var faces = gen_faces(N, c, HEX);
+    $.each(faces, function(i, f) {
+        if (HEX) {
+            var v0 = tx(f.x + .666, f.y + .333);
+            var v1 = tx(f.x + .333, f.y - .333);
+            var v2 = tx(f.x - .333, f.y - .666);
+            var v3 = tx(f.x - .666, f.y - .333);
+            var v4 = tx(f.x - .333, f.y + .333);
+            var v5 = tx(f.x + .333, f.y + .666);
+            ctx.beginPath();
+            ctx.moveTo(v0[0], v0[1]);
+            ctx.lineTo(v1[0], v1[1]);
+            ctx.lineTo(v2[0], v2[1]);
+            ctx.lineTo(v3[0], v3[1]);
+            ctx.lineTo(v4[0], v4[1]);
+            ctx.lineTo(v5[0], v5[1]);
+            ctx.closePath();
+        } else {
+            var v0 = tx(f.x, f.y);
+            var v1 = tx(f.x + 1, f.y + 1);
+            var v2 = tx(f.x + (f.top ? 0 : 1), f.y + (f.top ? 1 : 0));
+            ctx.beginPath();
+            ctx.moveTo(v0[0], v0[1]);
+            ctx.lineTo(v1[0], v1[1]);
+            ctx.lineTo(v2[0], v2[1]);
+            ctx.closePath();
+        }
+        
+        ctx.strokeStyle = 'black';
+        ctx.fillStyle = 'hsl(' + 360/20.*f.face + ', 0%, 80%)';
+
+        ctx.lineWidth = 0.005;
+        ctx.fill();
+        ctx.stroke();
+        
+        //dot(ctx, xy[0], xy[1], f.face);
+    });
+
+    for (var y = 0; y < 2; y++) {
+        for (var x = 0; x < 5; x++) {
+            tri(ctx, x, y, true);
+            tri(ctx, x, y+1, false);
+        }
+    }
+
+
+}
+
+function gen_faces(N, c, HEX) {
     var xmin = 0;
     var xmax = 0;
     var ymin = 0;
@@ -30,51 +93,31 @@ function blah(N, c) {
     var isktx = invert_transform(sktx[0], sktx[1]);
     $.each([0, 3], function(_, y) {
         $.each([0, 5], function(_, x) {
-            console.log(x, y);
             var p = transform([x, y], isktx[0], isktx[1]);
-            console.log(p[0], p[1]);
             xmin = Math.min(xmin, p[0]);
             xmax = Math.max(xmax, p[0]);
             ymin = Math.min(ymin, p[1]);
             ymax = Math.max(ymax, p[1]);
         });
     });
-    console.log(xmin, xmax, ymin, ymax);
 
-    var canvas = $('#canvas')[0];
-    var ctx = canvas.getContext('2d');
-    ctx.resetTransform();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.scale(1, -1);
-    ctx.translate(0, -canvas.height);
-    ctx.scale(150, 150);
-    ctx.translate(1.1, .66);
+    var faces = [];
     
-    ctx.transform(1, 0, -.5, .5*Math.sqrt(3), 0, 0); 
-    
-    for (var y = 0; y < 2; y++) {
-        for (var x = 0; x < 5; x++) {
-            tri(ctx, x, y, true);
-            tri(ctx, x, y+1, false);
-        }
-    }
-
-    var offsets = [[2/3.,1/3.],[1/3.,2/3.]];
+    var offsets = (HEX ? [[0,0]] : [[2/3.,1/3.],[1/3.,2/3.]]);
     for (var y = ymin; y < ymax; y++) {
         for (var x = xmin; x < xmax; x++) {
-            for (var i = 0 ; i < 2; i++) {
+            for (var i = 0 ; i < offsets.length; i++) {
                 var xy = transform([x+offsets[i][0], y+offsets[i][1]], sktx[0], sktx[1]);
                 var f = assign_to_face(xy);
-                if (f != null) {
-                    dot(ctx, xy[0], xy[1], f);
+                if (f != null && f >= 0) {
+                    faces.push({face: f, x: x, y: y, top: i == 1});
                 }
             }
         }
     }
     console.log((xmax - xmin + 1) * (ymax - ymin + 1) / (3*N+1) / (5*N+1));
 
-
-    
+    return faces;
 }
 
 function assign_to_face(xy) {
@@ -133,7 +176,8 @@ function tri(ctx, x, y, up) {
         ctx.lineTo(x + 1, y);
     }
     ctx.closePath();
-    
+
+    ctx.strokeStyle = '#eee';
     ctx.lineWidth = 0.005;
     ctx.stroke();
 }
