@@ -14,12 +14,165 @@ $(document).ready(function() {
 });
 
 
-function skew_tx(N, c) {
-    var b = N - c;
-    return invert_transform([b, -c], [c, b+c]);
-}
 
 EPSILON = 1e-6
+
+function vec(x, y) {
+    return {x: x, y: y};
+}
+
+function Vadd(a, b) {
+    return vec(a.x + b.x, a.y + b.y);
+}
+
+function transform(p, basis) {
+    var U = basis.U;
+    var V = basis.V;
+    return vec(p.x * U.x + p.y * V.x,
+               p.x * U.y + p.y * V.y);
+}
+
+function invert_transform(basis) {
+    var U = basis.U;
+    var V = basis.V;
+    var det = 1. / (U.x * V.y - U.y * V.x);
+    return {U: vec(V.y*det, -U.y*det),
+            V: vec(-V.x*det, U.x*det)};
+}
+
+function skew_tx(N, c) {
+    var b = N - c;
+    return invert_transform({U: vec(b, -c), V: vec(c, b + c)});
+}
+
+function footprint_bounds(tx) {
+    var bounds = {
+        xmin: 0,
+        xmax: 0,
+        ymin: 0,
+        ymax: 0,
+    };
+
+    var inv_tx = invert_transform(tx);
+    $.each([0, 3], function(_, y) {
+        $.each([0, 5], function(_, x) {
+            var p = transform(vec(x, y), inv_tx);
+            bounds.xmin = Math.min(bounds.xmin, p.x);
+            bounds.xmax = Math.max(bounds.xmax, p.x);
+            bounds.ymin = Math.min(bounds.ymin, p.y);
+            bounds.ymax = Math.max(bounds.ymax, p.y);
+        });
+    });
+    //console.log((bounds.xmax - bounds.xmin) * (bounds.ymax - bounds.ymin) / (3*N * 5*N));
+    return bounds;
+}
+
+function tessellate(N, c, type) {
+    var tx = skew_tx(N, c);
+    var bounds = footprint_bounds(tx);
+    
+    var n = {hex: 1, tri: 2}[type];
+    var faces = [];
+    for (var y = bounds.ymin; y < bounds.ymax; y++) {
+        for (var x = bounds.xmin; x < bounds.xmax; x++) {
+            for (var i = 0 ; i < n; i++) {
+                var face = face_for_tile(vec(x, y), i, type, tx);
+                if (face != null) {
+                    var tile = {face: face, x: x, y: y};
+                    if (type == 'tri') {
+                        tile.topheavy = (i == 1);
+                    }
+                    faces.push(tile);
+                }
+            }
+        }
+    }
+    // pentagons?
+    return faces;
+}
+
+function to_face_tri(p) {
+    var ix = Math.floor(p.x + EPSILON);
+    var iy = Math.floor(p.y + EPSILON);
+    var fx = p.x - ix;
+    var fy = p.y - iy;
+
+    // note: the inequalities here determine which face 'wins' the edges
+    // there must be tie-breakers because an icosahedron's edges are not an even multiple of its faces
+    var vertex = (fx < EPSILON && fy < EPSILON);
+    var topheavy = fy > fx + EPSILON;
+    return {x: ix, y: iy, topheavy: topheavy, vertex: vertex};
+}
+
+// map a face tri to a sequential face number; discard faces outside the icosahedron footprint
+function face_tri_to_num(ft) {
+    if (ft.x >= 0 && ft.x < 5) {
+        if (ft.y == 2 && !ft.topheavy) {
+            return ft.x;
+        } else if (ft.y == 1) {
+            return 5 + 2*ft.x + (ft.topheavy ? 0 : 1);
+        } else if (ft.y == 0 && ft.topheavy) {
+            return 15 + ft.x;
+        }
+    }
+    return null;
+}
+
+function face_for_tile(p, i, type, sktx) {
+    var topheavy = (type == 'tri' ? i == 1 : null);
+    var center_offset = {
+        hex: vec(0, 0),
+        tri: {false: vec(2/3., 1/3.), true: vec(1/3., 2/3.)}[topheavy]
+    }[type];
+    var face = to_face_tri(transform(Vadd(p, center_offset), sktx));
+
+    if (type == 'hex') {
+        if (face.vertex) {
+            // pentagon -- handled later
+            return null;
+        }
+    } else if (type == 'tri') {
+        // face.vertex always false -- tri centers can't land on icosahedron vertices
+
+        // triangle tiles can't be assigned to faces just based on their centers -- results in
+        // an unpleasant sawtooth pattern. the reference point for determining the correct face
+        // is the center of the conjoined 'diamond' with the neighboring triangle. but the
+        // orientation of the diamond (hence, which neighbor) varies by which edge of the face
+        // it's straddling. logic below sorts this all out.
+        // note this logic depends on skew transform param c being normalized to range [0, N)
+        
+        var edge_conditions = {
+            'vert': {
+                relref: {false: vec(.5, 0), true: vec(.5, 1.)}[topheavy],
+                dx: true,
+            },
+            'horiz': {
+                relref: {false: vec(.5, .5), true: vec(.5, .5)}[topheavy],
+                dy: true,
+            },
+            'sloped': {
+                relref: {false: vec(1., .5), true: vec(0, .5)}[topheavy],
+            },
+        };
+        $.each(edge_conditions, function(k, v) {
+            // get adjacent face using the designated reference point
+            var p_ref = Vadd(p, v.relref);
+            var face_ref = to_face_tri(transform(p_ref, sktx));
+            // check the adjacent face (if different from naive face), matches the expected
+            // difference for the designated face edge
+            if (face_ref.topheavy != face.topheavy &&
+                !!v.dx == (face_ref.x != face.x) &&
+                !!v.dy == (face_ref.y != face.y)) {
+                face = face_ref;
+                return false; // break
+            }
+        });
+    }
+    
+    return face_tri_to_num(face);
+}
+
+
 
 function blahh(N, c) {
     var canvas = $('#canvas')[0];
@@ -40,46 +193,45 @@ function blahh(N, c) {
         }
     }
 
-    //blah(N, c, true, ctx);
-    blah(N, c, false, ctx);
+    blah(N, c, 'hex', ctx);
+    blah(N, c, 'tri', ctx);
     
 }
 
-function blah(N, c, HEX, ctx) {
+function blah(N, c, type, ctx) {
     
     var sktx = skew_tx(N, c);
-    var tx = function(x, y) { return transform([x, y], sktx[0], sktx[1]); }
-    var faces = gen_faces(N, c, HEX);
+    var faces = tessellate(N, c, type);
     console.log(faces.length);
     $.each(faces, function(i, f) {
-        if (HEX) {
-            var v0 = tx(f.x + .666, f.y + .333);
-            var v1 = tx(f.x + .333, f.y - .333);
-            var v2 = tx(f.x - .333, f.y - .666);
-            var v3 = tx(f.x - .666, f.y - .333);
-            var v4 = tx(f.x - .333, f.y + .333);
-            var v5 = tx(f.x + .333, f.y + .666);
+        if (type == 'hex') {
+            var v0 = transform(vec(f.x + .666, f.y + .333), sktx);
+            var v1 = transform(vec(f.x + .333, f.y - .333), sktx);
+            var v2 = transform(vec(f.x - .333, f.y - .666), sktx);
+            var v3 = transform(vec(f.x - .666, f.y - .333), sktx);
+            var v4 = transform(vec(f.x - .333, f.y + .333), sktx);
+            var v5 = transform(vec(f.x + .333, f.y + .666), sktx);
             ctx.beginPath();
-            ctx.moveTo(v0[0], v0[1]);
-            ctx.lineTo(v1[0], v1[1]);
-            ctx.lineTo(v2[0], v2[1]);
-            ctx.lineTo(v3[0], v3[1]);
-            ctx.lineTo(v4[0], v4[1]);
-            ctx.lineTo(v5[0], v5[1]);
+            ctx.moveTo(v0.x, v0.y);
+            ctx.lineTo(v1.x, v1.y);
+            ctx.lineTo(v2.x, v2.y);
+            ctx.lineTo(v3.x, v3.y);
+            ctx.lineTo(v4.x, v4.y);
+            ctx.lineTo(v5.x, v5.y);
             ctx.closePath();
-        } else {
-            var v0 = tx(f.x, f.y);
-            var v1 = tx(f.x + 1, f.y + 1);
-            var v2 = tx(f.x + (f.top ? 0 : 1), f.y + (f.top ? 1 : 0));
+        } else if (type == 'tri') {
+            var v0 = transform(vec(f.x, f.y), sktx);
+            var v1 = transform(vec(f.x + 1, f.y + 1), sktx);
+            var v2 = transform(vec(f.x + (f.topheavy ? 0 : 1), f.y + (f.topheavy ? 1 : 0)), sktx);
             ctx.beginPath();
-            ctx.moveTo(v0[0], v0[1]);
-            ctx.lineTo(v1[0], v1[1]);
-            ctx.lineTo(v2[0], v2[1]);
+            ctx.moveTo(v0.x, v0.y);
+            ctx.lineTo(v1.x, v1.y);
+            ctx.lineTo(v2.x, v2.y);
             ctx.closePath();
         }
         
         ctx.strokeStyle = 'black';
-        ctx.fillStyle = 'hsl(' + 360*f.face/19*3 + ', 50%, 80%, 40%)';
+        ctx.fillStyle = 'hsl(' + 77.2*f.face + ', 50%, ' + (f.face % 2 == 0 ? 80 : 60) + '%, 40%)';
 
         ctx.lineWidth = 0.005;
         ctx.fill();
@@ -91,116 +243,6 @@ function blah(N, c, HEX, ctx) {
 
 }
 
-function gen_faces(N, c, HEX) {
-    var xmin = 0;
-    var xmax = 0;
-    var ymin = 0;
-    var ymax = 0;
-
-    var sktx = skew_tx(N, c);
-    var isktx = invert_transform(sktx[0], sktx[1]);
-    $.each([0, 3], function(_, y) {
-        $.each([0, 5], function(_, x) {
-            var p = transform([x, y], isktx[0], isktx[1]);
-            xmin = Math.min(xmin, p[0]);
-            xmax = Math.max(xmax, p[0]);
-            ymin = Math.min(ymin, p[1]);
-            ymax = Math.max(ymax, p[1]);
-        });
-    });
-
-    var faces = [];
-
-    var n = (HEX ? 1 : 2);
-    for (var y = ymin; y < ymax; y++) {
-        for (var x = xmin; x < xmax; x++) {
-            for (var i = 0 ; i < n; i++) {
-                var f = assign_to_face([x, y], i, sktx);
-                if (f != null && f.f >= 0) {
-                    faces.push({face: f.f, x: f.x, y: f.y, top: i == 1});
-                }
-            }
-        }
-    }
-    console.log((xmax - xmin + 1) * (ymax - ymin + 1) / (3*N+1) / (5*N+1));
-
-    return faces;
-}
-
-function _face(xy) {
-    var x = xy[0];
-    var y = xy[1];
-    var ix = Math.floor(x + EPSILON);
-    var iy = Math.floor(y + EPSILON);
-    var fx = x - ix;
-    var fy = y - iy;
-
-    var vertex = (fx < EPSILON && fy < EPSILON);
-    var top = fy > fx + EPSILON;
-    return {x: ix, y: iy, top: top, vertex: vertex};
-}
-
-function assign_to_face(xy, n, sktx) {
-    // in tri mode, centers can't land on vertices
-    // in hex mode, vertices should be ignored -- handled as a separate 'meta-face'?
-
-    var offsets = {
-        'center': [[2/3., 1/3.], [1/3., 2/3.]][n],
-        'right': [[.5, 0], [.5, 1.]][n],
-        'bottom': [[.5, .5], [.5, .5]][n],
-        'hypot': [[1., .5], [0, .5]][n],
-    };
-    
-    var baseline = transform([xy[0]+offsets.center[0], xy[1]+offsets.center[1]], sktx[0], sktx[1]);
-    var r = _face(baseline);
-    $.each(['right', 'bottom', 'hypot'], function(i, e) {
-        var ref = transform([xy[0]+offsets[e][0], xy[1]+offsets[e][1]], sktx[0], sktx[1]);
-        var r2 = _face(ref);
-
-        var diff = null;
-        if (r2.x != r.x && r2.y == r.y) {
-            diff = 'right';
-        } else if (r2.x == r.x && r2.y != r.y) {
-            diff = 'bottom';
-        } else if (r2.x == r.x && r2.y == r.y && r.top != r2.top) {
-            diff = 'hypot';
-        }
-        if (diff == e) {
-            r = r2;
-            return false; // break
-        }
-    });
-        
-    /* hex only
-    if (r.vertex) {
-        return -1;
-    }
-    */
-    var f = null;
-    if (r.x >= 0 && r.x < 5) {
-        if (r.y == 2 && !r.top) {
-            f = r.x;
-        } else if (r.y == 1) {
-            f = 5 + 2*r.x + (r.top ? 0 : 1);
-        } else if (r.y == 0 && r.top) {
-            f = 15 + r.x;
-        }
-    }
-    if (f == null) {
-        return null;
-    } else {
-        return {f:f, x:xy[0], y:xy[1]};
-    }
-}
-
-function transform(p, U, V) {
-    return [p[0] * U[0] + p[1] * V[0], p[0] * U[1] + p[1] * V[1]];
-}
-
-function invert_transform(U, V) {
-    var det = 1./(U[0]*V[1]-U[1]*V[0]);
-    return [[V[1]*det, -U[1]*det], [-V[0]*det, U[0]*det]];
-}
 
 
 function dot(ctx, x, y, f) {
