@@ -215,9 +215,9 @@ function render(N, c, type, ctx) {
 
     var MARGIN = 1/200.; // tied to context scale factor
     var radius = (span - MARGIN) / Math.sqrt(3);
-    
+
     $.each(faces, function(i, f) {
-        var faceColor = '#ccc'; //'hsl(' + 77.2*f.face + ', 50%, ' + (f.face % 2 == 0 ? 30 : 40) + '%, 40%)';
+        var faceColor = 'hsl(' + 77.2*f.face + ', 50%, ' + (f.face % 2 == 0 ? 30 : 40) + '%, 40%)';
 
         var nsides = {hex: 6, tri: 3}[type];
         var offset = {hex: .5, tri: (f.topheavy ? .5 : 0) - .25}[type];
@@ -237,11 +237,104 @@ function render(N, c, type, ctx) {
         //ctx.stroke();        
     });
 
+    var pent_rad_for_hex_edge = .5/Math.sin(2*Math.PI/10);
+    
+    if (type == 'hex') {
+        var isk = invert_transform(sktx);
+        for (var i = 0; i < 12; i++) {
+            var p;
+            var ad;
+            if (i == 0) {
+                p = vec(1, 3);
+                ad = 4;
+            } else if (i < 6) {
+                p = vec(i - 1, 2);
+                ad = (c == 0 ? 5 : 4);
+                if (i == 1 && c == 0) {
+                    ad = 0;
+                }
+            } else if (i < 11) {
+                p = vec(i - 6, 1);
+                ad = 1;
+                if (i == 6) {
+                    ad = (c == 0 ? .5 : 0);
+                }
+            } else if (i == 11) {
+                p = vec(4, 0);
+                ad = (c == 0 ? 2 : 1);
+            }
+            if (i == 1 && c > 0) {
+                p = vec(5, 2);
+                ad = 3;
+            }
+
+            /*
+            var cc = 0;
+            var nn = 0;
+            for (var ii = 0; ii < 6; ii++) {
+                var delta = [[1, 0], [1, 1], [0, 1], [-1, 0], [-1, -1], [0, -1]][ii];
+                var qq = Vadd(transform(p, isk), vec(delta[0], delta[1]));
+                var f = face_tri_to_num(to_face_tri(transform(qq, sktx)));
+                if (f != null) {
+                    console.log(p, ii, f);
+                    cc += ii;
+                    nn += 1;
+                }
+            }
+            console.log(cc / nn);
+*/
+            
+            
+
+            
+            p = transform(p, tritx);
+            //dot(ctx, p.x, p.y, 0);
+            //dot(ctx, p.x + .1*Math.cos(Math.PI/3*ad+theta0), p.y + .1*Math.sin(Math.PI/3*ad+theta0), 3);
+
+
+            if (Math.floor(ad) == ad) {
+                var displacement = .25*span * (Math.tan(Math.PI/3) - Math.tan(54/180.*Math.PI));
+            } else {
+                var displacement = .5*span * (1. - pent_rad_for_hex_edge);
+            }
+            var displang = 2*Math.PI/6*ad + theta0;
+            var displ = vec(displacement * Math.cos(displang), displacement * Math.sin(displang));
+            
+            var faceColor = '#ccc';
+
+            console.log('pentagon');
+            var nsides = 5;
+            var offset = .5;
+            ctx.beginPath();
+            for (var ii = 0; ii < nsides; ii++) {
+                var angle = 2*Math.PI / nsides * (ii + offset) + (2*Math.PI/6*ad) + (Math.floor(ad) != ad ? Math.PI : 0) +   + theta0;
+                //var pxx = transform(p, tritx);
+                var _r = span / Math.sqrt(3) * pent_rad_for_hex_edge;
+                _r = _r - .5*MARGIN / Math.cos(2*Math.PI/10);
+                var q = Vadd(Vadd(p, displ), vec(_r * Math.cos(angle), _r * Math.sin(angle)));
+                ctx.lineTo(q.x, q.y);
+            }
+            ctx.closePath();
+            
+            ctx.fillStyle = faceColor;
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 0.005;
+            ctx.fill();
+            //ctx.stroke();        
+
+            
+        }
+    }
 
 }
 
 
-
+function dot(ctx, x, y, f) {
+    ctx.beginPath();
+    ctx.arc(x, y, .025, 0, 2 * Math.PI);
+    ctx.fillStyle = 'hsl(' + 360/20.*f + ', 100%, 50%)';
+    ctx.fill();
+}
 
 /*
 function tri(ctx, x, y, up) {
