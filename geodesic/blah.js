@@ -78,11 +78,7 @@ function tessellate(N, c, type) {
             for (var i = 0 ; i < n; i++) {
                 var face = face_for_tile(vec(x, y), i, type, tx);
                 if (face != null) {
-                    var tile = {face: face, x: x, y: y};
-                    if (type == 'tri') {
-                        tile.topheavy = (i == 1);
-                    }
-                    faces.push(tile);
+                    faces.push(face);
                 }
             }
         }
@@ -124,14 +120,18 @@ function face_for_tile(p, i, type, sktx) {
         hex: vec(0, 0),
         tri: {false: vec(2/3., 1/3.), true: vec(1/3., 2/3.)}[topheavy]
     }[type];
-    var face = to_face_tri(transform(Vadd(p, center_offset), sktx));
+    var center = Vadd(p, center_offset);
+    var face = to_face_tri(transform(center, sktx));
 
+    var tile = {p: p, center: center};
+    
     if (type == 'hex') {
         if (face.vertex) {
             // pentagon -- handled later
             return null;
         }
     } else if (type == 'tri') {
+        tile.topheavy = topheavy;
         // face.vertex always false -- tri centers can't land on icosahedron vertices
 
         // triangle tiles can't be assigned to faces just based on their centers -- results in
@@ -168,13 +168,18 @@ function face_for_tile(p, i, type, sktx) {
             }
         });
     }
-    
-    return face_tri_to_num(face);
+
+    var face = face_tri_to_num(face);
+    if (face == null) {
+        return null;
+    }
+    tile.face = face;
+    return tile;
 }
 
 
 
-function blahh(N, c) {
+function blah(N, c, type) {
     var canvas = $('#canvas')[0];
     var ctx = canvas.getContext('2d');
     ctx.resetTransform();
@@ -184,60 +189,52 @@ function blahh(N, c) {
     ctx.scale(200, 200);
     ctx.translate(1.1, .66);
     
-    ctx.transform(1, 0, -.5, .5*Math.sqrt(3), 0, 0); 
-
+    /*
+    // draw footprint
     for (var y = 0; y < 2; y++) {
         for (var x = 0; x < 5; x++) {
             tri(ctx, x, y, true);
             tri(ctx, x, y+1, false);
         }
     }
+    */
 
-    blah(N, c, 'hex', ctx);
-    blah(N, c, 'tri', ctx);
+    render(N, c, type, ctx);
     
 }
 
-function blah(N, c, type, ctx) {
-    
+function render(N, c, type, ctx) {
+    var tritx = {U: vec(1, 0), V: vec(-.5, .5*Math.sqrt(3))};
     var sktx = skew_tx(N, c);
     var faces = tessellate(N, c, type);
     console.log(faces.length);
-    $.each(faces, function(i, f) {
-        if (type == 'hex') {
-            var v0 = transform(vec(f.x + .666, f.y + .333), sktx);
-            var v1 = transform(vec(f.x + .333, f.y - .333), sktx);
-            var v2 = transform(vec(f.x - .333, f.y - .666), sktx);
-            var v3 = transform(vec(f.x - .666, f.y - .333), sktx);
-            var v4 = transform(vec(f.x - .333, f.y + .333), sktx);
-            var v5 = transform(vec(f.x + .333, f.y + .666), sktx);
-            ctx.beginPath();
-            ctx.moveTo(v0.x, v0.y);
-            ctx.lineTo(v1.x, v1.y);
-            ctx.lineTo(v2.x, v2.y);
-            ctx.lineTo(v3.x, v3.y);
-            ctx.lineTo(v4.x, v4.y);
-            ctx.lineTo(v5.x, v5.y);
-            ctx.closePath();
-        } else if (type == 'tri') {
-            var v0 = transform(vec(f.x, f.y), sktx);
-            var v1 = transform(vec(f.x + 1, f.y + 1), sktx);
-            var v2 = transform(vec(f.x + (f.topheavy ? 0 : 1), f.y + (f.topheavy ? 1 : 0)), sktx);
-            ctx.beginPath();
-            ctx.moveTo(v0.x, v0.y);
-            ctx.lineTo(v1.x, v1.y);
-            ctx.lineTo(v2.x, v2.y);
-            ctx.closePath();
-        }
-        
-        ctx.strokeStyle = 'black';
-        ctx.fillStyle = 'hsl(' + 77.2*f.face + ', 50%, ' + (f.face % 2 == 0 ? 80 : 60) + '%, 40%)';
+    
+    var basis = transform(transform(vec(1, 0), sktx), tritx);
+    var span = Math.sqrt(basis.x * basis.x + basis.y * basis.y);
+    var theta0 = Math.atan2(basis.y, basis.x);
 
+    var MARGIN = 1/200.; // tied to context scale factor
+    var radius = (span - MARGIN) / Math.sqrt(3);
+    
+    $.each(faces, function(i, f) {
+        var faceColor = '#ccc'; //'hsl(' + 77.2*f.face + ', 50%, ' + (f.face % 2 == 0 ? 30 : 40) + '%, 40%)';
+
+        var nsides = {hex: 6, tri: 3}[type];
+        var offset = {hex: .5, tri: (f.topheavy ? .5 : 0) - .25}[type];
+        ctx.beginPath();
+        for (var i = 0; i < nsides; i++) {
+            var angle = 2*Math.PI / nsides * (i + offset) + theta0;
+            var p = transform(transform(f.center, sktx), tritx);
+            var q = Vadd(p, vec(radius * Math.cos(angle), radius * Math.sin(angle)));
+            ctx.lineTo(q.x, q.y);
+        }
+        ctx.closePath();
+
+        ctx.fillStyle = faceColor;
+        ctx.strokeStyle = 'black';
         ctx.lineWidth = 0.005;
         ctx.fill();
-        ctx.stroke();
-        
-        //dot(ctx, xy[0], xy[1], f.face);
+        //ctx.stroke();        
     });
 
 
@@ -245,13 +242,8 @@ function blah(N, c, type, ctx) {
 
 
 
-function dot(ctx, x, y, f) {
-    ctx.beginPath();
-    ctx.arc(x, y, .025, 0, 2 * Math.PI);
-    ctx.fillStyle = 'hsl(' + 360/20.*f + ', 100%, 50%)';
-    ctx.fill();
-}
 
+/*
 function tri(ctx, x, y, up) {
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -267,8 +259,4 @@ function tri(ctx, x, y, up) {
     ctx.lineWidth = 0.005;
     ctx.stroke();
 }
-
-function set_viewport(xmin, xmax, canvas) {
-    var ctx = canvas.getContext('2d');
-
-}
+*/
