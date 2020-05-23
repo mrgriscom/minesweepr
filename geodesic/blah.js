@@ -21,6 +21,10 @@ function vec(x, y) {
     return {x: x, y: y};
 }
 
+function vecPolar(r, theta) {
+    return vec(r * Math.cos(theta), r * Math.sin(theta));
+}
+
 function Vadd(a, b) {
     return vec(a.x + b.x, a.y + b.y);
 }
@@ -83,7 +87,9 @@ function tessellate(N, c, type) {
             }
         }
     }
-    // pentagons?
+    if (type == 'hex') {
+        pentagon_caps(tx, faces);
+    }
     return faces;
 }
 
@@ -177,7 +183,60 @@ function face_for_tile(p, i, type, sktx) {
     return tile;
 }
 
+function pentagon_caps(tx, faces) {
+    // determine how the pentagon links to the rest of the tiles by checking
+    // the adjacent slot in all six directions; compute the number of adjacent tiles
+    // and their average direction
+    var link_to_adj = function(p) {
+        var dirs_to_adj = [];
+        for (var dir = 0; dir < 6; dir++) {
+            var delta = [[1, 0], [1, 1], [0, 1], [-1, 0], [-1, -1], [0, -1]][dir];
+            var p_adj = Vadd(p, vec(delta[0], delta[1]));
+            var face = face_tri_to_num(to_face_tri(transform(p_adj, tx)));
+            if (face != null) {
+                // need to ensure all dirs are contiguous to compute average correctly
+                // (i.e., 0 and 6 are and should average to -0.5 / 5.5)
+                var normalized_dir = dir;
+                if (dirs_to_adj.length > 0 && dir - 1 != dirs_to_adj.slice(-1)[0]) {
+                    normalized_dir -= 6;
+                }
+                dirs_to_adj.push(normalized_dir);
+            }
+        }
+        var sum = 0;
+        for (var i = 0; i < dirs_to_adj.length; i++) {
+            sum += dirs_to_adj[i];
+        }
+        return {avg_dir: mod(sum / dirs_to_adj.length, 6), count: dirs_to_adj.length};
+    };
 
+    var inv_tx = invert_transform(tx);
+    for (var v = 0; v < 12; v++) {
+        var footprint_vertex;
+        if (v < 10) {
+            footprint_vertex = vec(v % 5, 2 - Math.floor(v / 5));
+        } else if (v == 10) {
+            footprint_vertex = vec(1, 3);
+        } else if (v == 11) {
+            footprint_vertex = vec(5 - 1, 0);
+        }
+        var p = transform(footprint_vertex, inv_tx);
+        
+        var link = link_to_adj(p);
+        if (footprint_vertex.x == 0) {
+            // these can link to either side due to wraparound; determine which side
+            // is more connected
+            var p_alt = transform(vec(5, footprint_vertex.y), inv_tx);
+            var alt_link = link_to_adj(p_alt);
+            if (alt_link.count > link.count) {
+                link = alt_link;
+                p = p_alt;
+            }
+        }
+        faces.push({face: -1, p: p, center: p, pentagon_anchor_dir: link.avg_dir});
+    }
+
+}
 
 function blah(N, c, type) {
     var canvas = $('#canvas')[0];
@@ -208,133 +267,71 @@ function render(N, c, type, ctx) {
     var sktx = skew_tx(N, c);
     var faces = tessellate(N, c, type);
     console.log(faces.length);
-    
+
+    // spacing between two vertices (triangle corners or hexagon centers)
     var basis = transform(transform(vec(1, 0), sktx), tritx);
     var span = Math.sqrt(basis.x * basis.x + basis.y * basis.y);
     var theta0 = Math.atan2(basis.y, basis.x);
 
+    // radius of center of tile to the boundary vertices
+    // same for both hex and tri, since hex center are tri vertices and vice versa
+    var radius = span / Math.sqrt(3);
+    
     var MARGIN = 1/200.; // tied to context scale factor
-    var radius = (span - MARGIN) / Math.sqrt(3);
 
-    $.each(faces, function(i, f) {
-        var faceColor = 'hsl(' + 77.2*f.face + ', 50%, ' + (f.face % 2 == 0 ? 30 : 40) + '%, 40%)';
-
-        var nsides = {hex: 6, tri: 3}[type];
-        var offset = {hex: .5, tri: (f.topheavy ? .5 : 0) - .25}[type];
+    var angle = function(nsides, k) {
+        return 2*Math.PI / nsides * k + theta0;
+    }
+    var draw_reg_poly = function(nsides, center, radius, rot0) {
+        radius -= .5*MARGIN / Math.cos(Math.PI / nsides); // angle from edge center to vertex
         ctx.beginPath();
         for (var i = 0; i < nsides; i++) {
-            var angle = 2*Math.PI / nsides * (i + offset) + theta0;
-            var p = transform(transform(f.center, sktx), tritx);
-            var q = Vadd(p, vec(radius * Math.cos(angle), radius * Math.sin(angle)));
-            ctx.lineTo(q.x, q.y);
+            var p = Vadd(center, vecPolar(radius, angle(nsides, i + rot0 + .5)));
+            ctx.lineTo(p.x, p.y);
         }
         ctx.closePath();
+    };
+    
+    var pentagon_radius = .5 / Math.sin(Math.PI / 5); // for edge len 1
 
+    $.each(faces, function(i, f) { console.log(f);
+        var faceColor = '#ccc'; //'hsl(' + 77.2*f.face + ', 50%, ' + (f.face % 2 == 0 ? 30 : 40) + '%, 40%)';
+        var p = transform(transform(f.center, sktx), tritx);
+        if (f.pentagon_anchor_dir == null) {
+            var nsides = {hex: 6, tri: 3}[type];
+            var rot0 = {hex: 0, tri: (f.topheavy ? 0 : .5) - .25}[type];
+            draw_reg_poly(nsides, p, radius, rot0);   
+        } else {
+            // TODO if N=1, render a custom dodechahedral net
+            
+            var dir = f.pentagon_anchor_dir;
+            var links_at_corner = (Math.abs((dir % 1.) - .5) < EPSILON);
+            if (links_at_corner) {
+                var displacement = 1 - pentagon_radius;
+                // rotate 180
+                dir += 3
+                displacement = -displacement;
+            } else {
+                // vertex angles from center to edge
+                var displacement = .5 * (Math.tan(Math.PI/3) - Math.tan(Math.PI*.5*(1 - 2/5)));
+            }
+            var displ = vecPolar(displacement * radius, angle(6, dir));
+            // dir is in units of hexagon-sides; must convert to pentagon-sides
+            var recalib_dir = dir * 5/6;
+            draw_reg_poly(5, Vadd(p, displ), radius * pentagon_radius, recalib_dir);
+        }
+        
         ctx.fillStyle = faceColor;
         ctx.strokeStyle = 'black';
         ctx.lineWidth = 0.005;
         ctx.fill();
-        //ctx.stroke();        
+        //ctx.stroke();
     });
 
-    var pent_rad_for_hex_edge = .5/Math.sin(2*Math.PI/10);
-    
-    if (type == 'hex') {
-        var isk = invert_transform(sktx);
-        for (var i = 0; i < 12; i++) {
-            var p;
-            var ad;
-            if (i == 0) {
-                p = vec(1, 3);
-                ad = 4;
-            } else if (i < 6) {
-                p = vec(i - 1, 2);
-                ad = (c == 0 ? 5 : 4);
-                if (i == 1 && c == 0) {
-                    ad = 0;
-                }
-            } else if (i < 11) {
-                p = vec(i - 6, 1);
-                ad = 1;
-                if (i == 6) {
-                    ad = (c == 0 ? .5 : 0);
-                }
-            } else if (i == 11) {
-                p = vec(4, 0);
-                ad = (c == 0 ? 2 : 1);
-            }
-            if (i == 1 && c > 0) {
-                p = vec(5, 2);
-                ad = 3;
-            }
-
-            /*
-            var cc = 0;
-            var nn = 0;
-            for (var ii = 0; ii < 6; ii++) {
-                var delta = [[1, 0], [1, 1], [0, 1], [-1, 0], [-1, -1], [0, -1]][ii];
-                var qq = Vadd(transform(p, isk), vec(delta[0], delta[1]));
-                var f = face_tri_to_num(to_face_tri(transform(qq, sktx)));
-                if (f != null) {
-                    console.log(p, ii, f);
-                    cc += ii;
-                    nn += 1;
-                }
-            }
-            console.log(cc / nn);
-*/
-            
-            
-
-            
-            p = transform(p, tritx);
-            //dot(ctx, p.x, p.y, 0);
-            //dot(ctx, p.x + .1*Math.cos(Math.PI/3*ad+theta0), p.y + .1*Math.sin(Math.PI/3*ad+theta0), 3);
-
-
-            if (Math.floor(ad) == ad) {
-                var displacement = .25*span * (Math.tan(Math.PI/3) - Math.tan(54/180.*Math.PI));
-            } else {
-                var displacement = .5*span * (1. - pent_rad_for_hex_edge);
-            }
-            var displang = 2*Math.PI/6*ad + theta0;
-            var displ = vec(displacement * Math.cos(displang), displacement * Math.sin(displang));
-            
-            var faceColor = '#ccc';
-
-            console.log('pentagon');
-            var nsides = 5;
-            var offset = .5;
-            ctx.beginPath();
-            for (var ii = 0; ii < nsides; ii++) {
-                var angle = 2*Math.PI / nsides * (ii + offset) + (2*Math.PI/6*ad) + (Math.floor(ad) != ad ? Math.PI : 0) +   + theta0;
-                //var pxx = transform(p, tritx);
-                var _r = span / Math.sqrt(3) * pent_rad_for_hex_edge;
-                _r = _r - .5*MARGIN / Math.cos(2*Math.PI/10);
-                var q = Vadd(Vadd(p, displ), vec(_r * Math.cos(angle), _r * Math.sin(angle)));
-                ctx.lineTo(q.x, q.y);
-            }
-            ctx.closePath();
-            
-            ctx.fillStyle = faceColor;
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 0.005;
-            ctx.fill();
-            //ctx.stroke();        
-
-            
-        }
-    }
 
 }
 
 
-function dot(ctx, x, y, f) {
-    ctx.beginPath();
-    ctx.arc(x, y, .025, 0, 2 * Math.PI);
-    ctx.fillStyle = 'hsl(' + 360/20.*f + ', 100%, 50%)';
-    ctx.fill();
-}
 
 /*
 function tri(ctx, x, y, up) {
@@ -353,3 +350,7 @@ function tri(ctx, x, y, up) {
     ctx.stroke();
 }
 */
+
+function mod(a, b) {
+    return ((a % b) + b) % b;
+}
