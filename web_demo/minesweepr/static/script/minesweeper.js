@@ -751,6 +751,8 @@ function parse_board(s) {
     return result;
 }
 
+// TODO move all of these to a separate js file
+
 /* Topo classes implement various board topologies; they must implement the following interface:
 
   [constructor] - sets board dimensions + other optional parameters
@@ -1411,15 +1413,78 @@ function GeodesicTopo(dim, skew, hex) {
     this.N = dim;
     this.c = skew % dim;
     this.mode = (hex ? 'hex' : 'tri');
-    console.log(dim, skew, hex);
-
-    this.tritx = {U: vec(1, 0), V: vec(-.5, .5*Math.sqrt(3))};
-    this.sktx = skew_tx(this.N, this.c);
     this.faces = tessellate(this.N, this.c, this.mode);
+
+    this._constants = function() {
+        var c = {
+            skew_tx: skew_tx(this.N, this.c),
+            tri_tx: {U: vec(1, 0), V: vec(-.5, .5*Math.sqrt(3))},
+            // radius of pentagon with edge length 1
+            pentagon_radius: .5 / Math.sin(Math.PI / 5),
+            pentagon_inner_radius: .5 * Math.tan(Math.PI*(.5 - 1/5)),
+        };
+        c.inv_skew_tx = invert_transform(c.skew_tx);
+        c.inv_tri_tx = invert_transform(c.tri_tx);
+        // spacing between two vertices (triangle corners or hexagon centers)
+        var basis = transform(transform(vec(1, 0), c.skew_tx), c.tri_tx);
+        c.span = Vlen(basis);
+        // radius of center of tile to the boundary vertices
+        // same for both hex and tri, since hex center are tri vertices and vice versa
+        c.radius = c.span / Math.sqrt(3);
+        var theta0 = Math.atan2(basis.y, basis.x);
+        c.geom_angle = function(nsides, k) {
+            return 2*Math.PI / nsides * k + theta0;
+        }
+        
+        c.bounds = {
+            xmin: +'Infinity',
+            xmax: -'Infinity',
+            ymin: +'Infinity',
+            ymax: -'Infinity',
+        };
+        $.each(this.faces, function(i, f) {
+            var p = transform(transform(f.center, c.skew_tx), c.tri_tx);
+            c.bounds.xmin = Math.min(c.bounds.xmin, p.x);
+            c.bounds.xmax = Math.max(c.bounds.xmax, p.x);
+            c.bounds.ymin = Math.min(c.bounds.ymin, p.y);
+            c.bounds.ymax = Math.max(c.bounds.ymax, p.y);
+        });
+        c.bounds.xmin -= c.radius;
+        c.bounds.xmax += c.radius;
+        c.bounds.ymin -= c.radius;
+        c.bounds.ymax += c.radius;
+
+        $.each(this.faces, function(i, f) {
+            if (f.pentagon_anchor_dir != null) {
+                // TODO if N=1, render a custom dodechahedral net
+            
+                var p = transform(transform(f.center, c.skew_tx), c.tri_tx);
+                var dir = f.pentagon_anchor_dir;
+                var links_at_corner = (Math.abs((dir % 1.) - .5) < EPSILON);
+                if (links_at_corner) {
+                    var displacement = 1 - c.pentagon_radius;
+                    // rotate 180
+                    dir += 3
+                    displacement = -displacement;
+                } else {
+                    var displacement = .5*Math.sqrt(3.) - c.pentagon_inner_radius;
+                }
+                var displ = vecPolar(displacement * c.radius, c.geom_angle(6, dir));
+                p = Vadd(p, displ);
+                f.proj_center = p;
+
+                // dir is in units of hexagon-sides; must convert to pentagon-sides
+                f.rot0 = dir * 5/6;
+            }
+        });
+        
+        return c;
+    }
+    this.constants = this._constants();
     
     this.dims = function() {
         // TODO move to separate 1d segment
-        return [this.dim, this.skew];
+        return [this.N, this.c];
     }
 
     this.cell_name = function (pos) {
@@ -1442,19 +1507,6 @@ function GeodesicTopo(dim, skew, hex) {
     $.each(this.faces, function(i, f) {
         var name = that.cell_name(that.face_to_pos(f));
         that.name_to_ix[name] = i;
-    });
-    this.bounds = {
-        xmin: +'Infinity',
-        xmax: -'Infinity',
-        ymin: +'Infinity',
-        ymax: -'Infinity',
-    };
-    $.each(this.faces, function(i, f) {
-        var p = transform(transform(f.center, that.sktx), that.tritx);
-        that.bounds.xmin = Math.min(that.bounds.xmin, p.x);
-        that.bounds.xmax = Math.max(that.bounds.xmax, p.x);
-        that.bounds.ymin = Math.min(that.bounds.ymin, p.y);
-        that.bounds.ymax = Math.max(that.bounds.ymax, p.y);
     });
     
     this.cell_ix = function (pos) {
@@ -1488,70 +1540,50 @@ function GeodesicTopo(dim, skew, hex) {
         //return Math.min(canvas.height / (.75 * this.height + .25), canvas.width / (Math.sqrt(3.) / 2. * (this.width + 1)));
     }
 
-    this.geom = function (pos, canvas) {
-        // spacing between two vertices (triangle corners or hexagon centers)
-        var basis = transform(transform(vec(1, 0), this.sktx), this.tritx);
-        var span = Math.sqrt(basis.x * basis.x + basis.y * basis.y);
-        var theta0 = Math.atan2(basis.y, basis.x);
-
-        // radius of center of tile to the boundary vertices
-        // same for both hex and tri, since hex center are tri vertices and vice versa
-        var radius = span / Math.sqrt(3);
-        
-        var xmin = this.bounds.xmin - radius;
-        var xmax = this.bounds.xmax + radius;
-        var ymin = this.bounds.ymin - radius;
-        var ymax = this.bounds.ymax + radius;
-        var scale = Math.min(canvas.width / (xmax - xmin), canvas.height / (ymax - ymin));
-        var scr_tx = function(p) {
-            return {x: (p.x - xmin) * scale, y: (ymax - p.y) * scale};
-        }        
-        var f = this.faces[this.cell_ix(pos)];
-        var p = scr_tx(transform(transform(f.center, this.sktx), this.tritx));
-        span *= scale;
-        radius *= scale;
-        
-        var angle = function(nsides, k) {
-            // TODO note negation for flip transform -- better to handle at final stage?
-            return -(2*Math.PI / nsides * k + theta0);
+    this.canvas_placement = function(canvas) {
+        var c = this.constants;
+        var scale = Math.min(canvas.width / (c.bounds.xmax - c.bounds.xmin), canvas.height / (c.bounds.ymax - c.bounds.ymin));
+        var pixel_tx = function(p) {
+            return {x: (p.x - c.bounds.xmin) * scale, y: (c.bounds.ymax - p.y) * scale};
         }
-        var pentagon_radius = .5 / Math.sin(Math.PI / 5); // for edge len 1
-
+        var inv_pixel_tx = function(p) {
+            return {x: p.x / scale + c.bounds.xmin, y: c.bounds.ymax - p.y / scale};
+        }
+        return {
+            scale: scale,
+            pixel_tx: pixel_tx,
+            inv_pixel_tx: inv_pixel_tx,
+        };
+    }
+    
+    this.geom = function (pos, canvas) {
+        var c = this.constants;
+        var f = this.faces[this.cell_ix(pos)];
+        var placement = this.canvas_placement(canvas);
+        
         if (f.pentagon_anchor_dir == null) {
+            var p = transform(transform(f.center, c.skew_tx), c.tri_tx);
             var nsides = {hex: 6, tri: 3}[this.mode];
             var rot0 = {hex: 0, tri: (f.topheavy ? 0 : .5) - .25}[this.mode];
+            var radius = c.radius;
         } else {
-            // TODO if N=1, render a custom dodechahedral net
-            
-            var dir = f.pentagon_anchor_dir;
-            var links_at_corner = (Math.abs((dir % 1.) - .5) < EPSILON);
-            if (links_at_corner) {
-                var displacement = 1 - pentagon_radius;
-                // rotate 180
-                dir += 3
-                displacement = -displacement;
-            } else {
-                // vertex angles from center to edge
-                var displacement = .5 * (Math.tan(Math.PI/3) - Math.tan(Math.PI*(.5 - 1/5)));
-            }
-            var displ = vecPolar(displacement * radius, angle(6, dir));
-            p = Vadd(p, displ);
-
+            var p = f.proj_center;
             var nsides = 5;
-            radius *= pentagon_radius;
-            // dir is in units of hexagon-sides; must convert to pentagon-sides
-            var rot0 = dir * 5/6;
+            var radius = c.radius * c.pentagon_radius;
+            var rot0 = f.rot0;
         }
         
+        var center_px = placement.pixel_tx(p);
         return {
-            span: span, // need to adjust for each shape type
-            center: [p.x, p.y], // FIXME need to adjust for pentagons
+            span: c.span * placement.scale, // need to adjust for each shape type
+            center: [center_px.x, center_px.y],
             path: function(ctx, no_margin) {
                 var MARGIN = (no_margin ? 0 : 1);                
                 var draw_reg_poly = function(nsides, center, radius, rot0) {
-                    radius -= .5*MARGIN / Math.cos(Math.PI / nsides); // angle from edge center to vertex
+                    radius -= .5*MARGIN / placement.scale / Math.cos(Math.PI / nsides); // angle from edge center to vertex
                     for (var i = 0; i < nsides; i++) {
-                        var p = Vadd(center, vecPolar(radius, angle(nsides, i + rot0 + .5)));
+                        var p = Vadd(center, vecPolar(radius, c.geom_angle(nsides, i + rot0 + .5)));
+                        p = placement.pixel_tx(p);
                         ctx.lineTo(p.x, p.y);
                     }
                     ctx.closePath();
@@ -1563,33 +1595,10 @@ function GeodesicTopo(dim, skew, hex) {
     }
 
     this.cell_from_xy = function (p, canvas) {
-        var basis = transform(transform(vec(1, 0), this.sktx), this.tritx);
-        var span = Math.sqrt(basis.x * basis.x + basis.y * basis.y);
-        var theta0 = Math.atan2(basis.y, basis.x);
-        var angle = function(nsides, k) {
-            // TODO note negation for flip transform -- better to handle at final stage?
-            // NOT negative here argh
-            return (2*Math.PI / nsides * k + theta0);
-        }
-
-        // radius of center of tile to the boundary vertices
-        // same for both hex and tri, since hex center are tri vertices and vice versa
-        var radius = span / Math.sqrt(3);
-        
-        var xmin = this.bounds.xmin - radius;
-        var xmax = this.bounds.xmax + radius;
-        var ymin = this.bounds.ymin - radius;
-        var ymax = this.bounds.ymax + radius;
-        var scale = Math.min(canvas.width / (xmax - xmin), canvas.height / (ymax - ymin));
-        var inv_scr_tx = function(p) {
-            return {x: p.x / scale + xmin, y: ymax - p.y / scale};
-        }
-        var scr_tx = function(p) {
-            return {x: (p.x - xmin) * scale, y: (ymax - p.y) * scale};
-        }        
-
-        var canvcoord = inv_scr_tx(p);
-        var coord = transform(transform(canvcoord, invert_transform(this.tritx)), invert_transform(this.sktx));
+        var c = this.constants;
+        var placement = this.canvas_placement(canvas);
+        var canvcoord = placement.inv_pixel_tx(p);
+        var coord = transform(transform(canvcoord, c.inv_tri_tx), c.inv_skew_tx);
         
         if (this.mode == 'tri') {
             var key = {x: Math.floor(coord.x), y: Math.floor(coord.y), topheavy: (mod(coord.y, 1.) > mod(coord.x, 1.))};
@@ -1610,6 +1619,7 @@ function GeodesicTopo(dim, skew, hex) {
             var ix = Math.floor(coord.x);
             var iy = Math.floor(coord.y);
             var pf = vec(coord.x - ix, coord.y - iy);
+            // TODO key points as vars
             if (cleave(pf, vec(0, 1), vec(1, 0))) {
                 if (cleave(pf, vec(1/3., 2/3.), vec(2/3., 4/3.))) {
                     iy += 1;
@@ -1642,43 +1652,14 @@ function GeodesicTopo(dim, skew, hex) {
             }
 
             if (face.pentagon_anchor_dir != null) {
-                var pentagon_radius = .5 / Math.sin(Math.PI / 5); // for edge len 1
-                
-                
-                var dir = face.pentagon_anchor_dir;
-                var links_at_corner = (Math.abs((dir % 1.) - .5) < EPSILON);
-                if (links_at_corner) {
-                    var displacement = 1 - pentagon_radius;
-                    // rotate 180
-                    dir += 3
-                    displacement = -displacement;
-                } else {
-                    // vertex angles from center to edge
-                    var displacement = .5 * (Math.tan(Math.PI/3) - Math.tan(Math.PI*(.5 - 1/5)));
-                }
-                var displ = vecPolar(displacement * radius, angle(6, dir));
-                var pc = Vadd(transform(transform(face.center, this.sktx), this.tritx), displ);
-
-                var _ctx = canvas.getContext('2d');
-                _ctx.fillStyle = 'red';
-                var qq = scr_tx(pc);
-                
-                _ctx.fillRect(qq.x-1, qq.y-1, 2, 2);
-                
-                radius *= pentagon_radius;
-                // dir is in units of hexagon-sides; must convert to pentagon-sides
-                var rot0 = dir * 5/6;
-
-                var dist = Math.sqrt(Math.pow(pc.x - canvcoord.x, 2) + Math.pow(pc.y - canvcoord.y, 2));
-                var theta = Math.atan2(canvcoord.y - pc.y, canvcoord.x - pc.x);
-                theta -= (2*Math.PI/5*rot0 + theta0);
-                theta = (mod(theta / (2*Math.PI/5) + .5, 1.) - .5) * 2*Math.PI/5;
-                if (Math.cos(theta)*dist/radius > Math.cos(Math.PI/5)) {
+                var delta = Vdiff(canvcoord, face.proj_center);
+                var dist = Vlen(delta);
+                var theta = Math.atan2(delta.y, delta.x);
+                theta -= c.geom_angle(5, face.rot0);
+                if (!inside_regular_poly(5, dist, theta, c.radius * c.pentagon_radius)) {
                     return null;
                 }
             }
-
-            
             
             return this.face_to_pos(face);
 

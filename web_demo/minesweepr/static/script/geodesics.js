@@ -12,6 +12,14 @@ function Vadd(a, b) {
     return vec(a.x + b.x, a.y + b.y);
 }
 
+function Vdiff(a, b) {
+    return vec(a.x - b.x, a.y - b.y);
+}
+
+function Vlen(v) {
+    return Math.sqrt(v.x * v.x + v.y * v.y);
+}
+
 function transform(p, basis) {
     var U = basis.U;
     var V = basis.V;
@@ -30,6 +38,14 @@ function invert_transform(basis) {
 function skew_tx(N, c) {
     var b = N - c;
     return invert_transform({U: vec(b, -c), V: vec(c, b + c)});
+}
+
+// center of edge at theta=0
+function inside_regular_poly(nsides, dist, theta, radius) {
+    var sector_angle = 2*Math.PI / nsides;
+    var sector_theta = (mod(theta / sector_angle + .5, 1.) - .5) * sector_angle;
+    var norm_dist = dist / radius;
+    return Math.cos(sector_theta) * norm_dist <= Math.cos(sector_angle / 2.);
 }
 
 function footprint_bounds(tx) {
