@@ -48,24 +48,32 @@ function inside_regular_poly(nsides, dist, theta, radius) {
     return Math.cos(sector_theta) * norm_dist <= Math.cos(sector_angle / 2.);
 }
 
-function footprint_bounds(tx) {
+function get_bounds(items, to_vec) {
     var bounds = {
-        xmin: 0,
-        xmax: 0,
-        ymin: 0,
-        ymax: 0,
+        xmin: +'Infinity',
+        xmax: -'Infinity',
+        ymin: +'Infinity',
+        ymax: -'Infinity',
     };
-
+    $.each(items, function(i, e) {
+        var v = (to_vec != null ? to_vec(e) : e);
+        bounds.xmin = Math.min(bounds.xmin, v.x);
+        bounds.xmax = Math.max(bounds.xmax, v.x);
+        bounds.ymin = Math.min(bounds.ymin, v.y);
+        bounds.ymax = Math.max(bounds.ymax, v.y);
+    });
+    return bounds;
+}
+                    
+function footprint_bounds(tx) {
+    var corners = [];
     var inv_tx = invert_transform(tx);
     $.each([0, 3], function(_, y) {
         $.each([0, 5], function(_, x) {
-            var p = transform(vec(x, y), inv_tx);
-            bounds.xmin = Math.min(bounds.xmin, p.x);
-            bounds.xmax = Math.max(bounds.xmax, p.x);
-            bounds.ymin = Math.min(bounds.ymin, p.y);
-            bounds.ymax = Math.max(bounds.ymax, p.y);
+            corners.push(transform(vec(x, y), inv_tx));
         });
     });
+    var bounds = get_bounds(corners);
     //console.log((bounds.xmax - bounds.xmin) * (bounds.ymax - bounds.ymin) / (3*N * 5*N));
     return bounds;
 }

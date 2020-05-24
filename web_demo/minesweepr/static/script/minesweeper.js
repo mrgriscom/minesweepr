@@ -1436,24 +1436,17 @@ function GeodesicTopo(dim, skew, hex) {
             return 2*Math.PI / nsides * k + theta0;
         }
         
-        c.bounds = {
-            xmin: +'Infinity',
-            xmax: -'Infinity',
-            ymin: +'Infinity',
-            ymax: -'Infinity',
-        };
-        $.each(this.faces, function(i, f) {
-            var p = transform(transform(f.center, c.skew_tx), c.tri_tx);
-            c.bounds.xmin = Math.min(c.bounds.xmin, p.x);
-            c.bounds.xmax = Math.max(c.bounds.xmax, p.x);
-            c.bounds.ymin = Math.min(c.bounds.ymin, p.y);
-            c.bounds.ymax = Math.max(c.bounds.ymax, p.y);
+        c.bounds = get_bounds(this.faces, function(f) {
+            return transform(transform(f.center, c.skew_tx), c.tri_tx);
         });
         c.bounds.xmin -= c.radius;
         c.bounds.xmax += c.radius;
         c.bounds.ymin -= c.radius;
         c.bounds.ymax += c.radius;
-
+        c.ix_bounds = get_bounds(this.faces, function(f) { return f.p; });
+        c.ix_width = c.ix_bounds.xmax - c.ix_bounds.xmin + 1;
+        c.ix_height = c.ix_bounds.ymax - c.ix_bounds.ymin + 1;
+        
         $.each(this.faces, function(i, f) {
             if (f.pentagon_anchor_dir != null) {
                 // TODO if N=1, render a custom dodechahedral net
@@ -1488,8 +1481,10 @@ function GeodesicTopo(dim, skew, hex) {
     }
 
     this.cell_name = function (pos) {
-        // TODO padding, 1-indexing, no negative #s
-        return pos.face + '-' + pos.x + '-' + pos.y + (pos.n != null ? '-' + pos.n : '');
+        var c = this.constants;
+        return pad_to(pos.y - c.ix_bounds.ymin + 1, c.ix_height) + '-' +
+            pad_to(pos.x - c.ix_bounds.xmin + 1, c.ix_width) +
+            (pos.n != null ? ['A', 'B'][pos.n] : '') + ' (f' + (pos.face + 1) + ')';
     }
 
     this.face_to_pos = function(f) {
@@ -1499,18 +1494,26 @@ function GeodesicTopo(dim, skew, hex) {
         }
         return pos;
     }
-    
+    this._pos_to_id = function(pos) {
+        var id = pos.y * this.constants.ix_width + pos.x;
+        if (pos.n != null) {
+            id = 2*id + pos.n;
+        }
+        return id;
+    }
+
     // move to init()
     // TODO sort faces
-    this.name_to_ix = {};
+    this.face_id_to_ix = {};
     var that = this;
     $.each(this.faces, function(i, f) {
-        var name = that.cell_name(that.face_to_pos(f));
-        that.name_to_ix[name] = i;
+        var id = that._pos_to_id(that.face_to_pos(f));
+        that.face_id_to_ix[id] = i;
     });
     
     this.cell_ix = function (pos) {
-        return this.name_to_ix[this.cell_name(pos)];
+        // note: 'face' is ignored
+        return this.face_id_to_ix[this._pos_to_id(pos)];
     }
 
     this.axes = ['face', 'r', 'c'];
@@ -1599,59 +1602,44 @@ function GeodesicTopo(dim, skew, hex) {
         var placement = this.canvas_placement(canvas);
         var canvcoord = placement.inv_pixel_tx(p);
         var coord = transform(transform(canvcoord, c.inv_tri_tx), c.inv_skew_tx);
+
+        var pi = vec(Math.floor(coord.x), Math.floor(coord.y));
+        var pf = Vdiff(coord, pi);
+        if (pi.x < c.ix_bounds.xmin || pi.x > c.ix_bounds.xmax) {
+            // prevent out-of-bounds tiles colliding with legit ids due to wraparound
+            return null;
+        }
         
         if (this.mode == 'tri') {
-            var key = {x: Math.floor(coord.x), y: Math.floor(coord.y), topheavy: (mod(coord.y, 1.) > mod(coord.x, 1.))};
-            var face = null;
-            // TODO make this indexable (don't know face num)
-            $.each(this.faces, function(i, e) {
-                if (e.p.x == key.x && e.p.y == key.y && e.topheavy == key.topheavy) {
-                    face = e;
-                    return false;
-                }
-            });
-            return (face != null ? this.face_to_pos(face) : null);
+            var pos = {x: pi.x, y: pi.y, n: (pf.y > pf.x ? 1 : 0)};
         } else if (this.mode == 'hex') {
+            // return whether p is above the line between p0 and p1
             var cleave = function(p, p0, p1) {
                 return p.y > (p.x - p0.x) / (p1.x - p0.x) * (p1.y - p0.y) + p0.y;
             }
-            
-            var ix = Math.floor(coord.x);
-            var iy = Math.floor(coord.y);
-            var pf = vec(coord.x - ix, coord.y - iy);
-            // TODO key points as vars
-            if (cleave(pf, vec(0, 1), vec(1, 0))) {
-                if (cleave(pf, vec(1/3., 2/3.), vec(2/3., 4/3.))) {
-                    iy += 1;
-                } else if (cleave(pf, vec(2/3., 1/3.), vec(4/3., 2/3.))) {
-                    ix += 1;
-                    iy += 1;
+
+            var triA = vec(1/3., 2/3.);
+            var triB = vec(2/3., 1/3.);
+            if (cleave(pf, triA, triB)) {
+                if (cleave(pf, triA, Vadd(triA, triA))) {
+                    var incr = vec(0, 1);
+                } else if (cleave(pf, triB, Vadd(triB, triB))) {
+                    var incr = vec(1, 1);
                 } else {
-                    ix += 1;
+                    var incr = vec(1, 0);
                 }
             } else {
-                if (cleave(pf, vec(1/3., 2/3.), vec(-1/3., 1/3.))) {
-                    iy += 1;
-                } else if (cleave(pf, vec(2/3., 1/3.), vec(1/3., -1/3.))) {
-
+                if (cleave(pf, triA, Vdiff(triA, triB))) {
+                    var incr = vec(0, 1);
+                } else if (cleave(pf, triB, Vdiff(triB, triA))) {
+                    var incr = vec(0, 0);
                 } else {
-                    ix += 1;
+                    var incr = vec(1, 0);
                 }
             }
-            var key = {x: ix, y: iy};
-            var face = null;
-            // TODO make this indexable (don't know face num)
-            $.each(this.faces, function(i, e) {
-                if (e.p.x == key.x && e.p.y == key.y) {
-                    face = e;
-                    return false;
-                }
-            });
-            if (face == null) {
-                return null;
-            }
-
-            if (face.pentagon_anchor_dir != null) {
+            pos = Vadd(pi, incr);
+            var face = this.faces[this.cell_ix(pos)];
+            if (face != null && face.pentagon_anchor_dir != null) {
                 var delta = Vdiff(canvcoord, face.proj_center);
                 var dist = Vlen(delta);
                 var theta = Math.atan2(delta.y, delta.x);
@@ -1660,11 +1648,8 @@ function GeodesicTopo(dim, skew, hex) {
                     return null;
                 }
             }
-            
-            return this.face_to_pos(face);
-
         }
-        
+        return (this.cell_ix(pos) != null ? pos : null);
     }
 
     
