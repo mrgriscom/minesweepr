@@ -1517,55 +1517,173 @@ function GeodesicTopo(dim, skew, hex) {
         }
         var pentagon_radius = .5 / Math.sin(Math.PI / 5); // for edge len 1
 
-        var that = this;
+        if (f.pentagon_anchor_dir == null) {
+            var nsides = {hex: 6, tri: 3}[this.mode];
+            var rot0 = {hex: 0, tri: (f.topheavy ? 0 : .5) - .25}[this.mode];
+        } else {
+            // TODO if N=1, render a custom dodechahedral net
+            
+            var dir = f.pentagon_anchor_dir;
+            var links_at_corner = (Math.abs((dir % 1.) - .5) < EPSILON);
+            if (links_at_corner) {
+                var displacement = 1 - pentagon_radius;
+                // rotate 180
+                dir += 3
+                displacement = -displacement;
+            } else {
+                // vertex angles from center to edge
+                var displacement = .5 * (Math.tan(Math.PI/3) - Math.tan(Math.PI*(.5 - 1/5)));
+            }
+            var displ = vecPolar(displacement * radius, angle(6, dir));
+            p = Vadd(p, displ);
+
+            var nsides = 5;
+            radius *= pentagon_radius;
+            // dir is in units of hexagon-sides; must convert to pentagon-sides
+            var rot0 = dir * 5/6;
+        }
+        
         return {
             span: span, // need to adjust for each shape type
             center: [p.x, p.y], // FIXME need to adjust for pentagons
             path: function(ctx, no_margin) {
-                var MARGIN = (no_margin ? 0 : 1);
-                
+                var MARGIN = (no_margin ? 0 : 1);                
                 var draw_reg_poly = function(nsides, center, radius, rot0) {
-                    // FIXME
                     radius -= .5*MARGIN / Math.cos(Math.PI / nsides); // angle from edge center to vertex
-                    //ctx.beginPath();
                     for (var i = 0; i < nsides; i++) {
                         var p = Vadd(center, vecPolar(radius, angle(nsides, i + rot0 + .5)));
                         ctx.lineTo(p.x, p.y);
                     }
                     ctx.closePath();
                 };
-        
-                if (f.pentagon_anchor_dir == null) {
-                    var nsides = {hex: 6, tri: 3}[that.mode];
-                    var rot0 = {hex: 0, tri: (f.topheavy ? 0 : .5) - .25}[that.mode];
-                    //debugger;
-                    draw_reg_poly(nsides, p, radius, rot0);   
-                } else {
-                    // TODO if N=1, render a custom dodechahedral net
-            
-                    var dir = f.pentagon_anchor_dir;
-                    var links_at_corner = (Math.abs((dir % 1.) - .5) < EPSILON);
-                    if (links_at_corner) {
-                        var displacement = 1 - pentagon_radius;
-                        // rotate 180
-                        dir += 3
-                        displacement = -displacement;
-                    } else {
-                        // vertex angles from center to edge
-                        var displacement = .5 * (Math.tan(Math.PI/3) - Math.tan(Math.PI*(.5 - 1/5)));
-                    }
-                    var displ = vecPolar(displacement * radius, angle(6, dir));
-                    // dir is in units of hexagon-sides; must convert to pentagon-sides
-                    var recalib_dir = dir * 5/6;
-                    draw_reg_poly(5, Vadd(p, displ), radius * pentagon_radius, recalib_dir);
-                }
-
+                draw_reg_poly(nsides, p, radius, rot0);
                 return no_margin;
             },
         };
     }
 
     this.cell_from_xy = function (p, canvas) {
+        var basis = transform(transform(vec(1, 0), this.sktx), this.tritx);
+        var span = Math.sqrt(basis.x * basis.x + basis.y * basis.y);
+        var theta0 = Math.atan2(basis.y, basis.x);
+        var angle = function(nsides, k) {
+            // TODO note negation for flip transform -- better to handle at final stage?
+            // NOT negative here argh
+            return (2*Math.PI / nsides * k + theta0);
+        }
+
+        // radius of center of tile to the boundary vertices
+        // same for both hex and tri, since hex center are tri vertices and vice versa
+        var radius = span / Math.sqrt(3);
+        
+        var xmin = this.bounds.xmin - radius;
+        var xmax = this.bounds.xmax + radius;
+        var ymin = this.bounds.ymin - radius;
+        var ymax = this.bounds.ymax + radius;
+        var scale = Math.min(canvas.width / (xmax - xmin), canvas.height / (ymax - ymin));
+        var inv_scr_tx = function(p) {
+            return {x: p.x / scale + xmin, y: ymax - p.y / scale};
+        }
+        var scr_tx = function(p) {
+            return {x: (p.x - xmin) * scale, y: (ymax - p.y) * scale};
+        }        
+
+        var canvcoord = inv_scr_tx(p);
+        var coord = transform(transform(canvcoord, invert_transform(this.tritx)), invert_transform(this.sktx));
+        
+        if (this.mode == 'tri') {
+            var key = {x: Math.floor(coord.x), y: Math.floor(coord.y), topheavy: (mod(coord.y, 1.) > mod(coord.x, 1.))};
+            var face = null;
+            // TODO make this indexable (don't know face num)
+            $.each(this.faces, function(i, e) {
+                if (e.p.x == key.x && e.p.y == key.y && e.topheavy == key.topheavy) {
+                    face = e;
+                    return false;
+                }
+            });
+            return (face != null ? this.face_to_pos(face) : null);
+        } else if (this.mode == 'hex') {
+            var cleave = function(p, p0, p1) {
+                return p.y > (p.x - p0.x) / (p1.x - p0.x) * (p1.y - p0.y) + p0.y;
+            }
+            
+            var ix = Math.floor(coord.x);
+            var iy = Math.floor(coord.y);
+            var pf = vec(coord.x - ix, coord.y - iy);
+            if (cleave(pf, vec(0, 1), vec(1, 0))) {
+                if (cleave(pf, vec(1/3., 2/3.), vec(2/3., 4/3.))) {
+                    iy += 1;
+                } else if (cleave(pf, vec(2/3., 1/3.), vec(4/3., 2/3.))) {
+                    ix += 1;
+                    iy += 1;
+                } else {
+                    ix += 1;
+                }
+            } else {
+                if (cleave(pf, vec(1/3., 2/3.), vec(-1/3., 1/3.))) {
+                    iy += 1;
+                } else if (cleave(pf, vec(2/3., 1/3.), vec(1/3., -1/3.))) {
+
+                } else {
+                    ix += 1;
+                }
+            }
+            var key = {x: ix, y: iy};
+            var face = null;
+            // TODO make this indexable (don't know face num)
+            $.each(this.faces, function(i, e) {
+                if (e.p.x == key.x && e.p.y == key.y) {
+                    face = e;
+                    return false;
+                }
+            });
+            if (face == null) {
+                return null;
+            }
+
+            if (face.pentagon_anchor_dir != null) {
+                var pentagon_radius = .5 / Math.sin(Math.PI / 5); // for edge len 1
+                
+                
+                var dir = face.pentagon_anchor_dir;
+                var links_at_corner = (Math.abs((dir % 1.) - .5) < EPSILON);
+                if (links_at_corner) {
+                    var displacement = 1 - pentagon_radius;
+                    // rotate 180
+                    dir += 3
+                    displacement = -displacement;
+                } else {
+                    // vertex angles from center to edge
+                    var displacement = .5 * (Math.tan(Math.PI/3) - Math.tan(Math.PI*(.5 - 1/5)));
+                }
+                var displ = vecPolar(displacement * radius, angle(6, dir));
+                var pc = Vadd(transform(transform(face.center, this.sktx), this.tritx), displ);
+
+                var _ctx = canvas.getContext('2d');
+                _ctx.fillStyle = 'red';
+                var qq = scr_tx(pc);
+                
+                _ctx.fillRect(qq.x-1, qq.y-1, 2, 2);
+                
+                radius *= pentagon_radius;
+                // dir is in units of hexagon-sides; must convert to pentagon-sides
+                var rot0 = dir * 5/6;
+
+                var dist = Math.sqrt(Math.pow(pc.x - canvcoord.x, 2) + Math.pow(pc.y - canvcoord.y, 2));
+                var theta = Math.atan2(canvcoord.y - pc.y, canvcoord.x - pc.x);
+                theta -= (2*Math.PI/5*rot0 + theta0);
+                theta = (mod(theta / (2*Math.PI/5) + .5, 1.) - .5) * 2*Math.PI/5;
+                if (Math.cos(theta)*dist/radius > Math.cos(Math.PI/5)) {
+                    return null;
+                }
+            }
+
+            
+            
+            return this.face_to_pos(face);
+
+        }
+        
     }
 
     
