@@ -1407,6 +1407,170 @@ function Cube3dTopo (width, height, depth) {
     }
 }
 
+function GeodesicTopo(dim, skew, hex) {
+    this.N = dim;
+    this.c = skew % dim;
+    this.mode = (hex ? 'hex' : 'tri');
+    console.log(dim, skew, hex);
+
+    this.tritx = {U: vec(1, 0), V: vec(-.5, .5*Math.sqrt(3))};
+    this.sktx = skew_tx(this.N, this.c);
+    this.faces = tessellate(this.N, this.c, this.mode);
+    
+    this.dims = function() {
+        // TODO move to separate 1d segment
+        return [this.dim, this.skew];
+    }
+
+    this.cell_name = function (pos) {
+        // TODO padding, 1-indexing, no negative #s
+        return pos.face + '-' + pos.x + '-' + pos.y + (pos.n != null ? '-' + pos.n : '');
+    }
+
+    this.face_to_pos = function(f) {
+        var pos = {face: f.face, x: f.p.x, y: f.p.y};
+        if (f.topheavy != null) {
+            pos.n = (f.topheavy ? 1 : 0);
+        }
+        return pos;
+    }
+    
+    // move to init()
+    // TODO sort faces
+    this.name_to_ix = {};
+    var that = this;
+    $.each(this.faces, function(i, f) {
+        var name = that.cell_name(that.face_to_pos(f));
+        that.name_to_ix[name] = i;
+    });
+    this.bounds = {
+        xmin: +'Infinity',
+        xmax: -'Infinity',
+        ymin: +'Infinity',
+        ymax: -'Infinity',
+    };
+    $.each(this.faces, function(i, f) {
+        var p = transform(transform(f.center, that.sktx), that.tritx);
+        that.bounds.xmin = Math.min(that.bounds.xmin, p.x);
+        that.bounds.xmax = Math.max(that.bounds.xmax, p.x);
+        that.bounds.ymin = Math.min(that.bounds.ymin, p.y);
+        that.bounds.ymax = Math.max(that.bounds.ymax, p.y);
+    });
+    
+    this.cell_ix = function (pos) {
+        return this.name_to_ix[this.cell_name(pos)];
+    }
+
+    this.axes = ['face', 'r', 'c'];
+    this.for_each_index = function(do_) {
+        var that = this;
+        $.each(this.faces, function(_, f) {
+            do_(that.face_to_pos(f));
+        });
+    }
+
+    this.num_cells = function () {
+        return this.faces.length;
+    }
+
+    this.adjacent = function (pos) {
+        return [];
+    }
+
+    this.increment_ix = function(ix, axis, dir) {
+    }
+
+    this.for_select_range = function(pos0, pos1, do_) {
+    }
+
+    // not part of interface
+    this.cell_dim = function (canvas) {
+        //return Math.min(canvas.height / (.75 * this.height + .25), canvas.width / (Math.sqrt(3.) / 2. * (this.width + 1)));
+    }
+
+    this.geom = function (pos, canvas) {
+        // spacing between two vertices (triangle corners or hexagon centers)
+        var basis = transform(transform(vec(1, 0), this.sktx), this.tritx);
+        var span = Math.sqrt(basis.x * basis.x + basis.y * basis.y);
+        var theta0 = Math.atan2(basis.y, basis.x);
+
+        // radius of center of tile to the boundary vertices
+        // same for both hex and tri, since hex center are tri vertices and vice versa
+        var radius = span / Math.sqrt(3);
+        
+        var xmin = this.bounds.xmin - radius;
+        var xmax = this.bounds.xmax + radius;
+        var ymin = this.bounds.ymin - radius;
+        var ymax = this.bounds.ymax + radius;
+        var scale = Math.min(canvas.width / (xmax - xmin), canvas.height / (ymax - ymin));
+        var scr_tx = function(p) {
+            return {x: (p.x - xmin) * scale, y: (ymax - p.y) * scale};
+        }        
+        var f = this.faces[this.cell_ix(pos)];
+        var p = scr_tx(transform(transform(f.center, this.sktx), this.tritx));
+        span *= scale;
+        radius *= scale;
+        
+        var angle = function(nsides, k) {
+            // TODO note negation for flip transform -- better to handle at final stage?
+            return -(2*Math.PI / nsides * k + theta0);
+        }
+        var pentagon_radius = .5 / Math.sin(Math.PI / 5); // for edge len 1
+
+        var that = this;
+        return {
+            span: span, // need to adjust for each shape type
+            center: [p.x, p.y], // FIXME need to adjust for pentagons
+            path: function(ctx, no_margin) {
+                var MARGIN = (no_margin ? 0 : 1);
+                
+                var draw_reg_poly = function(nsides, center, radius, rot0) {
+                    // FIXME
+                    radius -= .5*MARGIN / Math.cos(Math.PI / nsides); // angle from edge center to vertex
+                    //ctx.beginPath();
+                    for (var i = 0; i < nsides; i++) {
+                        var p = Vadd(center, vecPolar(radius, angle(nsides, i + rot0 + .5)));
+                        ctx.lineTo(p.x, p.y);
+                    }
+                    ctx.closePath();
+                };
+        
+                if (f.pentagon_anchor_dir == null) {
+                    var nsides = {hex: 6, tri: 3}[that.mode];
+                    var rot0 = {hex: 0, tri: (f.topheavy ? 0 : .5) - .25}[that.mode];
+                    //debugger;
+                    draw_reg_poly(nsides, p, radius, rot0);   
+                } else {
+                    // TODO if N=1, render a custom dodechahedral net
+            
+                    var dir = f.pentagon_anchor_dir;
+                    var links_at_corner = (Math.abs((dir % 1.) - .5) < EPSILON);
+                    if (links_at_corner) {
+                        var displacement = 1 - pentagon_radius;
+                        // rotate 180
+                        dir += 3
+                        displacement = -displacement;
+                    } else {
+                        // vertex angles from center to edge
+                        var displacement = .5 * (Math.tan(Math.PI/3) - Math.tan(Math.PI*(.5 - 1/5)));
+                    }
+                    var displ = vecPolar(displacement * radius, angle(6, dir));
+                    // dir is in units of hexagon-sides; must convert to pentagon-sides
+                    var recalib_dir = dir * 5/6;
+                    draw_reg_poly(5, Vadd(p, displ), radius * pentagon_radius, recalib_dir);
+                }
+
+                return no_margin;
+            },
+        };
+    }
+
+    this.cell_from_xy = function (p, canvas) {
+    }
+
+    
+}
+
 
 
 function pad(i, n) {

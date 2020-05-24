@@ -324,6 +324,10 @@ function new_topo(type, w, h, d) {
             return new Cube3dTopo(w, h, d);
         } else if (type == 'cube2d') {
             return new CubeSurfaceTopo(w, h, d);
+        } else if (type == 'geohex') {
+            return new GeodesicTopo(w, h, true);
+        } else if (type == 'geotri') {
+            return new GeodesicTopo(w, h, false);
         }
     })();
     topo.type = type;

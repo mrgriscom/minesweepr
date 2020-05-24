@@ -9,6 +9,7 @@
 <script src="{{ STATIC_URL }}script/minesweeper.js" type="text/javascript"></script>
 <script src="{{ STATIC_URL }}script/player.js" type="text/javascript"></script>
 <script src="{{ STATIC_URL }}script/shortcut.js" type="text/javascript"></script>
+<script src="{{ STATIC_URL }}script/geodesics.js" type="text/javascript"></script>
 <script type="text/javascript">
 
 SOLVER_URL = '{% url minesweepr.views.api_solve %}';
@@ -152,10 +153,12 @@ td {
               <input id="topo-grid" name="topo" type="radio" value="grid"> <label for="topo-grid">grid</label><br>
               <input id="topo-torus" name="topo" type="radio" value="torus"> <label for="topo-torus">torus</label><br>
               <input id="topo-cube2d" name="topo" type="radio" value="cube2d"> <label for="topo-cube2d">cube (surface)</label><br>
+              <input id="topo-cube3d" name="topo" type="radio" value="cube3d"> <label for="topo-cube3d">cube (3D)</label><br>
             </td>
             <td>
-              <input id="topo-cube3d" name="topo" type="radio" value="cube3d"> <label for="topo-cube3d">cube (3D)</label><br>
               <input id="topo-hex" name="topo" type="radio" value="hex"> <label for="topo-hex">hex-grid</label><br>
+              <input id="topo-geohex" name="topo" type="radio" value="geohex"> <label for="topo-geohex">hex-sphere</label><br>
+              <input id="topo-geotri" name="topo" type="radio" value="geotri"> <label for="topo-geotri">icosahedron</label><br>
               <input id="topo-grid2" name="topo" type="radio" value="grid2"> <label for="topo-grid2">grid+1</label><br>
             </td>
           </tr>
