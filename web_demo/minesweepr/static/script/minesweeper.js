@@ -559,15 +559,19 @@ function Cell () {
         if (this.draw_ctx == null) {
             return;
         }
-        
-        var leave_clear = (this.prob == null || (this.flagged && this.prob > 1. - EPSILON));
-        var fill = (leave_clear ? null : prob_shade(this.prob, this.best_guess));
-        var alert = this.flagged && this.prob < 1.;
 
+        if (this.prob == null) {
+            var leave_clear = true;
+            var alert = false;
+        } else {        
+            var leave_clear = this.flagged && this.prob > 1. - EPSILON;
+            var alert = this.flagged && this.prob < 1.;
+        }
         if (already_cleared && leave_clear && !alert) {
             return;
         }
 
+        var fill = (leave_clear ? null : prob_shade(this.prob, this.best_guess));
         this.draw_ctx.draw(this, 'render_overlay', this.draw_ctx.solution_canvas, !already_cleared, {fill: fill, alert: alert}, true);
     }
     
