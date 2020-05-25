@@ -454,8 +454,13 @@ function Board (topology, for_analysis_only) {
         if (this.topology.type != 'grid') {
             qs.set('topo', this.topology.type);
         }
-        $.each(this.topology.dims(), function(i, e) {
-            qs.set(['w', 'h', 'd'][i], e);
+        var dims = this.topology.dims();
+        // use fixed list to maintain ordering
+        $.each(['w', 'h', 'd', 'skew'], function(i, e) {
+            var key = url_param_to_input_id[e] || e;
+            if (key in dims) {
+                qs.set(e, dims[key]);                
+            }
         });
         qs.set('mines', this.num_mines != null ? this.num_mines : (this.mine_prob < 1. ? this.mine_prob : this.topology.num_cells()));
         // forego over-aggressive escaping
@@ -758,7 +763,7 @@ function parse_board(s) {
   [constructor] - sets board dimensions + other optional parameters
   type - radio button id for this topology type (set externally)
   axes - list of axes that make up this topology's index format, ordered most-significant to least
-  dims() - return topo's dimensions in width/height/depth order (only including those which are relevant)  
+  dims() - return a dict of topo's dimensions (only including those which are relevant)  
   num_cells() - return number of cells on board
   for_each_index(func(pos)) - iterate through the indexes of all cells on the board (index format determined
     by topology) and call func with each index. iteration order MUST match 'axes'
@@ -787,7 +792,7 @@ function GridTopo (width, height, wrap, adjfunc) {
     this.wrap = wrap;
     this.adjfunc = adjfunc;
     this.dims = function() {
-        return [this.width, this.height];
+        return {width: this.width, height: this.height};
     }
 
     this.cell_name = function (pos) {
@@ -892,7 +897,7 @@ function HexGridTopo (width, height) {
     this.width = width;
     this.height = height;
     this.dims = function() {
-        return [this.width, this.height];
+        return {width: this.width, height: this.height};
     }
 
     this.cell_name = function (pos) {
@@ -1023,7 +1028,7 @@ function CubeSurfaceTopo (width, height, depth) {
     this.height = height;
     this.depth = depth;
     this.dims = function() {
-        return [this.width, this.height, this.depth];
+        return {width: this.width, height: this.height, depth: this.depth};
     }
     
     //direction: u=0, r=1, d=2, l=3
@@ -1255,7 +1260,7 @@ function Cube3dTopo (width, height, depth) {
     this.h = height;
     this.d = depth;
     this.dims = function() {
-        return [this.w, this.h, this.d];
+        return {width: this.w, height: this.h, depth: this.d};
     }
 
     this.cell_name = function (pos) {
@@ -1476,8 +1481,7 @@ function GeodesicTopo(dim, skew, hex) {
     this.constants = this._constants();
     
     this.dims = function() {
-        // TODO move to separate 1d segment
-        return [this.N, this.c];
+        return {width: this.N, skew: this.c};
     }
 
     this.cell_name = function (pos) {
@@ -1503,7 +1507,7 @@ function GeodesicTopo(dim, skew, hex) {
     }
 
     // move to init()
-    // TODO sort faces
+    // TODO sort faces to match axis order
     this.face_id_to_ix = {};
     var that = this;
     $.each(this.faces, function(i, f) {
@@ -1529,13 +1533,20 @@ function GeodesicTopo(dim, skew, hex) {
     }
 
     this.adjacent = function (pos) {
+        // FIXME
         return [];
     }
 
     this.increment_ix = function(ix, axis, dir) {
+        // FIXME
+        // hex use x,y,z
+        // tri use up/down, left/right, be smart with current theta0
+        // follow adj in chosen dir
     }
 
     this.for_select_range = function(pos0, pos1, do_) {
+        do_(pos0);
+        // FIXME simple xy rect like for cube2d
     }
 
     // not part of interface
@@ -1565,33 +1576,32 @@ function GeodesicTopo(dim, skew, hex) {
         var placement = this.canvas_placement(canvas);
         
         if (f.pentagon_anchor_dir == null) {
-            var p = transform(transform(f.center, c.skew_tx), c.tri_tx);
+            var center = transform(transform(f.center, c.skew_tx), c.tri_tx);
             var nsides = {hex: 6, tri: 3}[this.mode];
             var rot0 = {hex: 0, tri: (f.topheavy ? 0 : .5) - .25}[this.mode];
             var radius = c.radius;
         } else {
-            var p = f.proj_center;
+            var center = f.proj_center;
             var nsides = 5;
             var radius = c.radius * c.pentagon_radius;
             var rot0 = f.rot0;
         }
-        
-        var center_px = placement.pixel_tx(p);
+
+        var span = c.span * placement.scale;
+        span *= {hex: .8, tri: .65}[this.mode];
+        var center_px = placement.pixel_tx(center);
         return {
-            span: c.span * placement.scale, // need to adjust for each shape type
+            span: span,
             center: [center_px.x, center_px.y],
             path: function(ctx, no_margin) {
-                var MARGIN = (no_margin ? 0 : 1);                
-                var draw_reg_poly = function(nsides, center, radius, rot0) {
-                    radius -= .5*MARGIN / placement.scale / Math.cos(Math.PI / nsides); // angle from edge center to vertex
-                    for (var i = 0; i < nsides; i++) {
-                        var p = Vadd(center, vecPolar(radius, c.geom_angle(nsides, i + rot0 + .5)));
-                        p = placement.pixel_tx(p);
-                        ctx.lineTo(p.x, p.y);
-                    }
-                    ctx.closePath();
-                };
-                draw_reg_poly(nsides, p, radius, rot0);
+                var buf = .5 * (no_margin ? 0 : 1) / placement.scale;
+                var r = radius - buf / Math.cos(Math.PI / nsides); // angle from edge center to vertex
+                for (var i = 0; i < nsides; i++) {
+                    var p = Vadd(center, vecPolar(r, c.geom_angle(nsides, i + rot0 + .5)));
+                    var px = placement.pixel_tx(p);
+                    ctx.lineTo(px.x, px.y);
+                }
+                ctx.closePath();
                 return no_margin;
             },
         };

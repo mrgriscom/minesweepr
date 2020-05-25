@@ -146,23 +146,52 @@ function get_url_defaults() {
     }
     topo = topo || 'grid';
 
-    return {
-        topo: topo,
-        w: params.get('w'),
-        h: params.get('h'),
-        d: params.get('d'),
-        mines: params.get('mines'),
-    };
+    var args = {topo: topo};
+    $.each(['w', 'h', 'd', 'skew', 'mines'], function(i, e) {
+        args[e] = params.get(e);
+    });
+    return args;
 }
 
-function set_defaults() {
-    cached_dimensions = {_2d: [30, 16, null, 99], _3d: [6, 10, 8, 80]};
-    active_dimension = null;
+var url_param_to_input_id = {
+    'w': 'width',
+    'h': 'height',
+    'd': 'depth',
+};
 
+function set_defaults() {
+    cached_dimensions = {
+        _2d: {
+            width: 30,
+            height: 16,
+            mines: 99,
+        },
+        _3d: {
+            width: 6,
+            height: 10,
+            depth: 8,
+            mines: 80,
+        },
+        geo: {
+            width: 4,
+            skew: 0,
+            mines: '25%',
+        },
+    };
+    active_dimension = null;
+    
     var defaults = get_url_defaults();
-    $.each(['w', 'h', 'd', 'mines'], function(i, e) {
-        if (defaults[e] != null) {
-            cached_dimensions[topo_dim(defaults.topo)][i] = defaults[e];
+    $.each(defaults, function(k, v) {
+        if (v == null) {
+            return;
+        }
+        
+        // presence of keys in this dict is used to show/hide the relevant input fields,
+        // so don't set keys that weren't already there from the start
+        var dict = cached_dimensions[topo_dim(defaults.topo)];
+        var key = url_param_to_input_id[k] || k;
+        if (key in dict) {
+            dict[key] = v;
         }
     });
     
@@ -171,6 +200,36 @@ function set_defaults() {
     selectChoice($('#show_mines'), false);
     selectChoice($('#show_sol'));
     selectChoice($('#highlighting'));
+}
+
+function topo_dim(topo) {
+    var _3d = ['cube3d', 'cube2d'];
+    var geo = ['geohex', 'geotri'];
+    return (_3d.indexOf(topo) != -1 ? '_3d' :
+            (geo.indexOf(topo) != -1 ? 'geo' :
+             '_2d'));
+}
+
+function topoChanged(e) {
+    var selected = $(e.target).val();
+    var cur_dimension = topo_dim(selected);
+
+    if (active_dimension != cur_dimension) {
+        if (active_dimension != null) {
+            $.each(Object.keys(cached_dimensions[active_dimension]), function(i, e) {
+                cached_dimensions[active_dimension][e] = $('#' + e).val();
+            });
+        }
+        $.each(cached_dimensions[cur_dimension], function(k, v) {
+            $('#' + k).val(v);
+        });
+        $.each(['width', 'height', 'depth', 'skew'], function(i, e) {
+            var relevant = (e in cached_dimensions[cur_dimension]);
+            $('#' + e + '_field')[relevant ? 'show' : 'hide']();
+            $('#' + e + '_lab')[relevant ? 'show' : 'hide']();
+        });
+        active_dimension = cur_dimension;
+    }
 }
 
 function get_preset_board() {
@@ -195,35 +254,6 @@ function get_setting(name) {
 function selectChoice(elem, enabled) {
     elem.attr('checked', enabled != null ? enabled : true);
     elem.trigger('change');
-}
-
-function topo_dim(topo) {
-    var _3d = ['cube3d', 'cube2d'];
-    return (_3d.indexOf(topo) != -1 ? '_3d' : '_2d');
-}
-
-function topoChanged(e) {
-    var selected = $(e.target).val();
-    var cur_dimension = topo_dim(selected);
-    
-    if (cur_dimension == '_3d') {
-        $('#depth').show();
-        $('#depth_lab').show();       
-    } else {
-        $('#depth').hide();
-        $('#depth_lab').hide();
-    }
-    
-    if (active_dimension != cur_dimension) {
-        if (active_dimension != null) {
-            cached_dimensions[active_dimension] = [$('#width').val(), $('#height').val(), active_dimension == '_3d' ? $('#depth').val() : null, $('#mines').val()];
-        }
-        $('#width').val(cached_dimensions[cur_dimension][0]);
-        $('#height').val(cached_dimensions[cur_dimension][1]);
-        $('#depth').val(cached_dimensions[cur_dimension][2]);
-        $('#mines').val(cached_dimensions[cur_dimension][3]);
-        active_dimension = cur_dimension;
-    }
 }
 
 function parsemine(raw, surface_area) {
@@ -277,12 +307,12 @@ function writeminespec(board) {
 
 function get_topo() {
     var topo_type = $('input[name="topo"]:checked').val();
-    var parse = function(id) {
+    var parse = function(id, allow_zero) {
         var val = Math.round(+$(id).val());
         val = isNaN(val) ? 0 : val;
-        return Math.max(val, 1);
+        return Math.max(val, allow_zero ? 0 : 1);
     }
-    return new_topo(topo_type, parse('#width'), parse('#height'), parse('#depth'));
+    return new_topo(topo_type, parse('#width'), parse('#height'), parse('#depth'), parse('#skew', true));
 }
 
 function new_game(board_data) {
@@ -301,7 +331,7 @@ function game_reset() {
     SOLUTIONS = {};
 }
 
-function new_topo(type, w, h, d) {
+function new_topo(type, w, h, d, skew) {
     var topo = (function() {
         if (type == 'grid') {
             return new GridTopo(w, h);
@@ -325,9 +355,9 @@ function new_topo(type, w, h, d) {
         } else if (type == 'cube2d') {
             return new CubeSurfaceTopo(w, h, d);
         } else if (type == 'geohex') {
-            return new GeodesicTopo(w, h, true);
+            return new GeodesicTopo(w, skew, true);
         } else if (type == 'geotri') {
-            return new GeodesicTopo(w, h, false);
+            return new GeodesicTopo(w, skew, false);
         }
     })();
     topo.type = type;

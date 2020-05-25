@@ -158,7 +158,7 @@ td {
             <td>
               <input id="topo-hex" name="topo" type="radio" value="hex"> <label for="topo-hex">hex-grid</label><br>
               <input id="topo-geohex" name="topo" type="radio" value="geohex"> <label for="topo-geohex">hex-sphere</label><br>
-              <input id="topo-geotri" name="topo" type="radio" value="geotri"> <label for="topo-geotri">icosahedron</label><br>
+              <input id="topo-geotri" name="topo" type="radio" value="geotri"> <label for="topo-geotri">geodesic</label><br>
               <input id="topo-grid2" name="topo" type="radio" value="grid2"> <label for="topo-grid2">grid+1</label><br>
             </td>
           </tr>
@@ -170,10 +170,12 @@ td {
     <tr>
       <td width="1%" class="dimlabel">Width:</td>
       <td><input id="width" type="text" style="width: 5em;"></td>
-      <td width="1%" class="dimlabel subseqlabel">Height:</td>
-      <td><input id="height" type="text" style="width: 5em;"></td>
-      <td class="dimlabel"><span id="depth_lab" class="subseqlabel">Depth:</span></td>
-      <td><input id="depth" type="text" style="width: 5em;"></td>
+      <td id="height_lab" width="1%" class="dimlabel subseqlabel">Height:</td>
+      <td id="height_field"><input id="height" type="text" style="width: 5em;"></td>
+      <td id="depth_lab" width="1%" class="dimlabel subseqlabel">Depth:</td>
+      <td id="depth_field"><input id="depth" type="text" style="width: 5em;"></td>
+      <td id="skew_lab" width="1%" class="dimlabel subseqlabel">Skew:</td>
+      <td id="skew_field"><input id="skew" type="text" style="width: 5em;"></td>
     </tr>
     <tr>
       <td class="dimlabel">Mines:</td>
