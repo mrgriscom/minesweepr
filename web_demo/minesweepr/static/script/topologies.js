@@ -937,21 +937,27 @@ function GeodesicTopo(dim, skew, hex) {
     this.tessellate = function(N, c, type) {
         var tx = this.skew_tx(N, c);
         var bounds = this.footprint_bounds(tx);
+
+        var faces = [];
+        var add_face = function(face) {
+            if (face != null) {
+                // used for index lookups, so can't have floating point error
+                face.p.x = Math.round(face.p.x);
+                face.p.y = Math.round(face.p.y);
+                faces.push(face);
+            }
+        };
         
         var n = {hex: 1, tri: 2}[type];
-        var faces = [];
         for (var y = bounds.ymin; y < bounds.ymax; y++) {
             for (var x = bounds.xmin; x < bounds.xmax; x++) {
                 for (var i = 0 ; i < n; i++) {
-                    var face = this.face_for_tile(vec(x, y), i, type, tx);
-                    if (face != null) {
-                        faces.push(face);
-                    }
+                    add_face(this.face_for_tile(vec(x, y), i, type, tx));
                 }
             }
         }
         if (type == 'hex') {
-            this.pentagon_caps(tx, faces);
+            this.pentagon_caps(tx, add_face);
         }
         return faces;
     }
@@ -983,7 +989,7 @@ function GeodesicTopo(dim, skew, hex) {
         return null;
     }
 
-    this.face_for_tile = function(p, i, type, sktx) {
+    this.face_for_tile = function(p, i, type, sktx) {        
         var topheavy = (type == 'tri' ? i == 1 : null);
         var center_offset = {
             hex: vec(0, 0),
@@ -1047,7 +1053,7 @@ function GeodesicTopo(dim, skew, hex) {
         return tile;
     }
     
-    this.pentagon_caps = function(tx, faces) {
+    this.pentagon_caps = function(tx, add_face) {
         // determine how the pentagon links to the rest of the tiles by checking
         // the adjacent slot in all six directions; compute the number of adjacent tiles
         // and their average direction
@@ -1098,7 +1104,7 @@ function GeodesicTopo(dim, skew, hex) {
                     p = p_alt;
                 }
             }
-            faces.push({face: -1, p: p, center: p, pentagon_anchor_dir: link.avg_dir});
+            add_face({face: -1, p: p, center: p, pentagon_anchor_dir: link.avg_dir});
         }   
     }
 
