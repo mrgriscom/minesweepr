@@ -5,7 +5,13 @@ MINE_FILL = 'rgba(0, 0, 0, .2)';
 MINE_MARK_STROKE = 'black';
 MINE_MARK_WRONG_STROKE = 'red';
 EXPLODED = 'rgba(255, 0, 0, .8)';
-COUNT_FILL = ['blue', 'green', 'red', 'purple', 'brown', 'cyan', 'orange', 'black'];
+COUNT_FILL = [
+    // original
+    'blue', 'green', 'red', 'darkblue', 'brown', 'darkcyan', 'black', 'grey',
+    // unofficial
+    'purple', 'yellow', 'orange', 'magenta',
+    // default for higher #s
+    'black'];
 MARGIN = 1;
 MINE_RADIUS = .5;
 FONT_SIZE = .5;
