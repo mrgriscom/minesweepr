@@ -440,8 +440,12 @@ function Board (topology, for_analysis_only) {
             if (last_ix != null) {
                 var max_diff_rank = board.topology.axes.length;
                 $.each(pos, function(k, v) {
+                    var signif = board.topology.axes.indexOf(k);
+                    if (signif == -1) {
+                        return;
+                    }
                     if (last_ix[k] != v) {
-                        max_diff_rank = Math.min(max_diff_rank, board.topology.axes.indexOf(k));
+                        max_diff_rank = Math.min(max_diff_rank, signif);
                     }
                 });
                 for (var i = max_diff_rank; i < board.topology.axes.length - 1; i++) {

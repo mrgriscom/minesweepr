@@ -663,10 +663,12 @@ function GeodesicTopo(dim, skew, hex) {
     this.init = function() {
         this.faces = this.tessellate(this.N, this.c, this.mode);
         this.constants = this._constants();
-
-        // TODO sort faces to match axis order
-        this.face_id_to_ix = {};
+ 
         var that = this;
+        this.faces = _.sortBy(this.faces, function(f) {
+            return that._pos_to_id(that.face_to_pos(f));
+        });
+        this.face_id_to_ix = {};
         $.each(this.faces, function(i, f) {
             var id = that._pos_to_id(that.face_to_pos(f));
             that.face_id_to_ix[id] = i;
@@ -752,9 +754,11 @@ function GeodesicTopo(dim, skew, hex) {
     }
     
     this._pos_to_id = function(pos) {
-        var id = pos.y * this.constants.ix_width + pos.x;
+        // negate y for top-down ordering
+        var id = -pos.y * this.constants.ix_width + pos.x;
         if (pos.n != null) {
-            id = 2*id + pos.n;
+            // invert n for proper left-to-right
+            id = 2*id + (1 - pos.n);
         }
         return id;
     }
@@ -764,7 +768,7 @@ function GeodesicTopo(dim, skew, hex) {
         return this.face_id_to_ix[this._pos_to_id(pos)];
     }
 
-    this.axes = ['face', 'r', 'c'];
+    this.axes = ['y', 'x'];
     this.for_each_index = function(do_) {
         var that = this;
         $.each(this.faces, function(_, f) {
@@ -859,10 +863,6 @@ function GeodesicTopo(dim, skew, hex) {
 
         var pi = vec(Math.floor(coord.x), Math.floor(coord.y));
         var pf = Vdiff(coord, pi);
-        if (pi.x < c.ix_bounds.xmin || pi.x > c.ix_bounds.xmax) {
-            // prevent out-of-bounds tiles colliding with legit ids due to wraparound
-            return null;
-        }
         
         if (this.mode == 'tri') {
             var pos = {x: pi.x, y: pi.y, n: (pf.y > pf.x ? 1 : 0)};
@@ -899,11 +899,21 @@ function GeodesicTopo(dim, skew, hex) {
                 var theta = Math.atan2(delta.y, delta.x);
                 theta -= c.geom_angle(5, face.rot0);
                 if (!inside_regular_poly(5, dist, theta, c.radius * c.pentagon_radius)) {
-                    return null;
+                    pos = null;
                 }
             }
         }
-        return (this.cell_ix(pos) != null ? pos : null);
+
+        if (pos != null) {
+            if (pos.x < c.ix_bounds.xmin || pos.x > c.ix_bounds.xmax) {
+                // prevent out-of-bounds tiles colliding with legit ids due to wraparound
+                pos = null;
+            } else if (this.cell_ix(pos) == null) {
+                // not a valid tile
+                pos = null;
+            }
+        }
+        return pos;
     }
 
     this.skew_tx = function(N, c) {
