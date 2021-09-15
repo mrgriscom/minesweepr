@@ -1196,7 +1196,7 @@ function hover_overlays(e) {
 }
 
 var OVERLAY_UPDATE = function(){};
-var cellname_in_tooltip = false;
+var cellname_in_tooltip = true; //false;
 function prob_tooltip(pos, mousePos) {
     var show = false;
     if (pos) {
