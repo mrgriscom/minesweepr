@@ -824,8 +824,41 @@ function GeodesicTopo(dim, skew, hex) {
             }
         }
         return adj;
+
+        /*
+            for (var dx = -1; dx <= 1; dx++) {
+                for (var dy = -1; dy <= 1; dy++) {
+                    var neighb = Vadd(pos, vec(dx, dy));
+                    if (this.mode == 'hex') {
+                        if (is_adj(neighb)) {
+                            process_neighbor(neighb);
+                        }
+                    } else {
+                        for (var n = 0; n < 2; n++) {
+                            neighb.n = n;
+                            if (is_adj(neighb)) {
+                                process_neighbor({...neighb});
+                            }
+                        }
+                    }
+                }
+            }
+*/
+
+        
     }
 
+    /*
+    this.adjacent_for = function(pos, dx, dy, n) {
+        var neighb = Vadd(pos, vec(dx, dy));
+        if (n != null) {
+            neighb.n = n;
+        }
+        
+        neighb.x = Math.round(neighb.x);
+        neighb.y = Math.round(neighb.y);
+*/
+    
     this.wraparound = function(pos, neighbor, deb) {
         if (deb) {
             debugger;
@@ -858,13 +891,44 @@ function GeodesicTopo(dim, skew, hex) {
         // populate 'face'
         var pos = this.face_to_pos(this.faces[this.cell_ix(pos)]);
         var ft = this.face_num_to_tri(pos.face);
+        //var coord = transform(pos, c.skew_tx);
+        //var face_tri = (pos.face != -1 ? this.face_num_to_tri(pos.face) : null);
+
+        /*
+        var z = function(pos) {
+            return pos.x - pos.y + (pos.n == null ? 0 : 1 - pos.n);
+        }
+        */
+
+        /*
+                var is_adj = function(neighb) {
+            if (neighb.x == pos.x && neighb.y == pos.y && neighb.n == pos.n) {
+                // exclude self
+                return false;
+            }
+            return Math.abs(z(neighb) - z(pos)) <= 1;
+        }
+*/
         
         var alt = neighbor;
         var poscenter = transform(Vadd(pos, pos.n == null ? vec(0,0) : pos.n == 0 ? vec(2/3,1/3) : vec(1/3,2/3)), c.skew_tx);
         var center = transform(Vadd(neighbor, neighbor.n == null ? vec(0,0) : neighbor.n == 0 ? vec(2/3,1/3) : vec(1/3,2/3)), c.skew_tx);
+
+        /*
+            var center = transform(Vadd(neighb, (neighb.n == null ? vec(0, 0) :
+                                                 neighb.n == 0 ? vec(2/3, 1/3) : vec(1/3, 2/3))),
+                                   c.skew_tx);
+            var nft = that.to_face_tri(center);            
+*/
+
+        
         if (ft.y != 1 && (pos.face != -1 || poscenter.y == 3 || poscenter.y == 0)) {
             // for top pentagon cap, need to manually set pivot
 
+            //if (pos.face == -1 && (coord.y > 3 - EPSILON || coord.y < EPSILON)) {
+            // top/bottom pentagon cap
+
+            
             
             //if (center.y > 3 || center.y < 0) {
                 /*
@@ -887,6 +951,10 @@ function GeodesicTopo(dim, skew, hex) {
             //}
 
 
+            //if (f_eq(center.x, Math.round(center.x)) && (f_eq(center.y, 3) || f_eq(center.y, 0))) {
+            //    // apex cap but shifted
+            //    neighb = transform(vec(center.y > 1.5 ? c.apex_x_top : c.apex_x_bottom, center.y), c.inv_skew_tx);
+
             if (Math.abs(center.y - 3) < EPSILON && Math.abs(center.x - Math.round(center.x)) < EPSILON) {
                 var alt = {x: 1, y: 3};
                 alt = transform(alt, c.inv_skew_tx);
@@ -900,6 +968,33 @@ function GeodesicTopo(dim, skew, hex) {
                 alt.y = Math.round(alt.y);
                 return alt;
             } else if (center.y > 2 || center.y < 1) {
+
+                /*
+            } else if (face_tri != null && (coord.y < 1+EPSILON || coord.y > 2-EPSILON) && (center.y < 1+EPSILON || center.y > 2-EPSILON)) {
+                // 'pos' not in the central band or the pentagons on the border thereof
+                // i.e., in the upper/lower 'leaves'
+                var top = (face_tri.y > 1);
+                var left = cleave(center,
+                                  Vadd(face_tri, vec(top ? .5 : 0, 0)),
+                                  Vadd(face_tri, vec(top ? 1 : .5, 1)));
+                var rot_cc = {U: vec(1, 1), V: vec(-1, 0)};
+                var rot_clockwise = invert_transform(rot_cc);
+                
+                var rot = (top ^ left ? rot_clockwise : rot_cc);
+                var pivot = Vadd(face_tri, vec(left ? 0 : 1, top ? 0 : 1));
+                var rotated = Vadd(transform(Vdiff(center, pivot), rot), pivot);
+                if (top == that.to_face_tri(rotated).topheavy) {
+                    // boundary condition -- rotated tri is still on the unclaimed seam
+                    return;
+                }
+                
+                neighb = transform(rotated, c.inv_skew_tx);
+                neighb = that.to_face_tri(neighb);
+                if (pos.n != null) {
+                    neighb.n = (neighb.topheavy ? 1 : 0);
+                }
+  */
+                
                 var upper = (ft.y > 0);
                 var left = transform(center, c.tri_tx).x < transform(Vadd(ft, vec(.5, upper ? 0 : 1)), c.tri_tx).x;
                 if (upper) {
@@ -948,7 +1043,7 @@ function GeodesicTopo(dim, skew, hex) {
             alt = transform(alt, c.skew_tx);
             alt = Vadd(alt, vec(ft.x > 2.5 ? -5 : 5, 0));
             alt = transform(alt, c.inv_skew_tx);
-            if (this.mode != 'hex') {
+            if (this.mode != 'hex') { // if n != null
                 alt.n = n;
             }
         }                
