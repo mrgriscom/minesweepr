@@ -1324,16 +1324,80 @@ function GeodesicTopo(dim, skew, hex) {
     }
 
     this.sanity_check = function() {
-        // call generic sanity check
-        // get and validate counts
+        var pass = topology_sanity_check(this);
+
+        var counts = {};
+        var that = this;
+        this.for_each_index(function(cell) {
+            var adj = that.adjacent(cell);
+            var adj_ixs = _.map(adj, function(cell) { return that.cell_ix(cell); });
+            var n_adj = _.uniq(adj_ixs).length;
+            counts[n_adj] = (counts[n_adj] || 0) + 1;
+        });
+
+        if (this.mode == 'hex') {
+            var expected_counts = {5: 12, 6: -1};
+        } else {
+            if (this.N == 1) {
+                var expected_counts = {9: 20};
+            } else {
+                var expected_counts = {11: 60, 12: -1};
+            }
+        }
+
+        var counts_match = true;
+        for (const n of _.uniq(_.keys(counts).concat(_.keys(expected_counts)))) {
+            if (counts[n] != expected_counts[n] && expected_counts[n] != -1) {
+                counts_match = false;
+                break;
+            }
+        }
+        if (!counts_match) {
+            pass = false;
+            console.log('counts: expected', expected_counts, 'got', counts);
+        }
+
+        return pass;
     }
     
     this.init();
 }
 
+function geodesic_sanity_check() {
+    var max_n = 10;
+    for (const mode of ['hex', 'tri']) {
+        for (var n = 1; n <= max_n; n++) {
+            for (var skew = 0; skew < n; skew++) {
+                var topo = new GeodesicTopo(n, skew, mode == 'hex');
+                var pass = topo.sanity_check();
+                console.log(mode, n, skew, pass ? 'passed' : 'failed');
+            }
+        }
+    }
+}
+
 function topology_sanity_check(topo) {
-    // nothing adjacent to self
-    // adjacency is bi-directional
+    var cells_to_ixs = function(cells) {
+        return _.map(cells, function(cell) { return topo.cell_ix(cell); });
+    }
+
+    var pass = true;
+    topo.for_each_index(function(cell) {
+        var ix = topo.cell_ix(cell);
+        var adjacent = topo.adjacent(cell);
+        for (const adj_cell of adjacent) {
+            var adj_adj = cells_to_ixs(topo.adjacent(adj_cell));
+            if (!adj_adj.includes(ix)) {
+                pass = false;
+                console.log(topo.cell_name(cell), topo.cell_name(adj_cell), 'adjacency not symmetric');
+            }
+        }
+        if (cells_to_ixs(adjacent).includes(ix)) {
+            pass = false;
+            console.log(ix + ' adjacent to self');
+        }
+    });
+    return pass;
 }
 
 function pad(i, n) {
@@ -1428,30 +1492,4 @@ function get_bounds(items, to_vec) {
 
 /*
 sanity check
-        var counts = {};
-+        this.for_each_cell(function(pos, cell, board) {
-+            var n_adj = 0;
-+            board.for_each_neighbor(pos, function(pos, neighb, board) {
-+                n_adj++;
-+            });
-+            if (n_adj != 11 && n_adj != 12) {
-+                console.log(pos, n_adj);
-+            }
-+            counts[n_adj] = (counts[n_adj] || 0) + 1;
-+
-+            board.for_each_neighbor(pos, function(pos2, neighb, board) {
-+                var found = false;
-+                board.for_each_neighbor(pos2, function(pos3, neighb, board) {
-+                    if (board.topology.cell_ix(pos3) == board.topology.cell_ix(pos)) {
-+                        found = true;
-+                    }
-+                });
-+                if (!found) {
-+                    console.log('not symmetric', pos, pos2);
-+                }
-+            });
-+
-+            
-+        });
-+        console.log(counts);
 */
