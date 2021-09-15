@@ -853,10 +853,20 @@ function GeodesicTopo(dim, skew, hex) {
             return that.cell_ix(cell) != null;
         }
 
+        var xy_to_ix = function(center) {
+            var cell = transform(center, c.inv_skew_tx);
+            cell = that.to_face_tri(cell);
+            // to_face_tri performs necessary truncation
+            if (pos.n != null) {
+                cell.n = (cell.topheavy ? 1 : 0);
+            }
+            return cell;
+        }
+        
         // TEMP
         var canv = $('#solution')[0];
         var ctx = canv.getContext('2d');
-        //reset_canvas(canv);
+        reset_canvas(canv);
         var pl = this.canvas_placement(canv);
 
         // TEMP
@@ -883,101 +893,137 @@ function GeodesicTopo(dim, skew, hex) {
         var coord = transform(pos, c.skew_tx);
         var face_tri = (pos.face != -1 ? this.face_num_to_tri(pos.face) : null);
         var center = transform(Vadd(neighbor, (neighbor.n == null ? vec(0, 0) :
-                                             neighbor.n == 0 ? vec(2/3, 1/3) : vec(1/3, 2/3))),
+                                               neighbor.n == 0 ? vec(2/3, 1/3) : vec(1/3, 2/3))),
                                c.skew_tx);
 
         
-        var alt = neighbor;
+
+        var rotate_across_seam = function(center, clockwise, pivot) {
+            var rot_cc = {U: vec(1, 1), V: vec(-1, 0)};
+            var rot_clockwise = invert_transform(rot_cc);
+                
+            var rot = (clockwise ? rot_clockwise : rot_cc);
+            var rotated = Vadd(transform(Vdiff(center, pivot), rot), pivot);
+            return rotated;
+        }
+
+        var horizontal_wrap = function(center) {
+            return Vadd(center, vec(center.x > 2.5 ? -5 : 5, 0));
+        }                
 
 
+            
+        // triangles in horizband -- horiz wrap
+        // triangles in leaves -- up to 2 rotations, horiz wrap
+        // hex in horiz band -- horiz wrap
+        // hex in leaf -- rotate (max 1), #special case if neighbor is apex
+        // #pentagon apex -- rotate 2 + horiz
+        // #pentagon medial -- horiz
+        
+
+        if ((f_eq(center.y, 3) || f_eq(center.y, 0)) && f_eq(center.x, Math.round(center.x))) {
+            // neighbor is an 'apex' pentagon; collapse to the one rendered pentagon for top/bottom
+            var top = (center.y > 1.5);
+            return xy_to_ix(vec(top ? c.apex_x_top : c.apex_x_bottom, center.y));
+        }
+
+        var max_rotations = 0;
         if (face_tri == null) {
-            if (f_eq(center.y, 3) || f_eq(center.y, 0)) {
+            if (f_eq(coord.y, 3) || f_eq(coord.y, 0)) {
                 // apex pentagon cap
+                max_rotations = 2;
 
-                // TODO perform multiple rotation
-            } else {
-                // pentagon cap on horizontal band -- normal adjacency finds all neighbors; do nothing
-            }
-            return;
-        } else if (f_eq(center.x, Math.round(center.x)) && (f_eq(center.y, 3) || f_eq(center.y, 0))) {
-            // apex cap but shifted
-            neighbor = transform(vec(center.y > 1.5 ? c.apex_x_top : c.apex_x_bottom, center.y), c.inv_skew_tx);
-            alt.x = Math.round(alt.x);
-            alt.y = Math.round(alt.y);
-            alt = neighbor;
-            return alt;
-        } else if (face_tri.y != 1) {
-            if (center.y > 2 + EPSILON || center.y < 1 + EPSILON) {
-                // 'pos' not in the central band or the pentagons on the border thereof
-                // i.e., in the upper/lower 'leaves'
+                var top = f_eq(coord.y, 3);
+                var left = cleave(center, coord, 
+                                  Vadd(coord, vec(-.5, -1)));//top ? vec(vec(top ? 1 : .5, 1)));
+                var pivot = Vadd(coord, vec((left ? -1 : 0) + (top ? 0 : 1), top ? -1 : 1));
+                /*
+
                 var top = (face_tri.y > 1);
                 var left = cleave(center,
                                   Vadd(face_tri, vec(top ? .5 : 0, 0)),
                                   Vadd(face_tri, vec(top ? 1 : .5, 1)));
-                var rot_cc = {U: vec(1, 1), V: vec(-1, 0)};
-                var rot_clockwise = invert_transform(rot_cc);
-                
-                var rot = (top ^ left ? rot_clockwise : rot_cc);
-                var pivot = Vadd(face_tri, vec(left ? 0 : 1, top ? 0 : 1));
-                var rotated = Vadd(transform(Vdiff(center, pivot), rot), pivot);
-                //if (top == that.to_face_tri(rotated).topheavy) {
-                //    // boundary condition -- rotated tri is still on the unclaimed seam
-                //    return;
-                //}
-                
-                neighbor = transform(rotated, c.inv_skew_tx);
-                neighbor = that.to_face_tri(neighbor);
-                if (pos.n != null) {
-                    neighbor.n = (neighbor.topheavy ? 1 : 0);
-                }
 
-                //if (this.mode != 'hex') {
-                //    alt.n = (mod(alt.y,1) > mod(alt.x,1) ? 1 : 0);
-                //}
-                alt = neighbor;
-                if (this.mode == 'hex') {
-                    alt.x = Math.round(alt.x);
-                    alt.y = Math.round(alt.y);
-                } else {
-                    // truncate n/3 offset
-                    alt.x = Math.floor(alt.x);
-                    alt.y = Math.floor(alt.y);
-                }
-            }                
+                var pivot = Vadd(face_tri, vec(left ? 0 : 1, top ? 0 : 1));
+*/
+            } else {
+                // pentagon cap on horizontal band
+            }
+        } else if (face_tri.y != 1) {// &&
+            max_rotations = 2;
+
+            
+            //(center.y > 2 - EPSILON || center.y < 1 + EPSILON)) {
+            // 'pos' not in the central band or the pentagons on the border thereof
+            // i.e., in the upper/lower 'leaves'
+            var top = (face_tri.y > 1);
+            var left = cleave(center,
+                              Vadd(face_tri, vec(top ? .5 : 0, 0)),
+                              Vadd(face_tri, vec(top ? 1 : .5, 1)));
+            var pivot = Vadd(face_tri, vec(left ? 0 : 1, top ? 0 : 1));
+                //neighbor = rotate_across_seam(center, top ^ left, pivot);
         }
 
+        var to_valid_cell = function(center) {
+            var cell = xy_to_ix(center);
+            if (valid_cell(cell)) {
+                return cell;
+            }
+            var cell = xy_to_ix(horizontal_wrap(center));
+            if (valid_cell(cell)) {
+                return cell;
+            }
+            return null;
+        }
+
+        var num_rots = (max_rotations > 0 ? 2 : 0);
+        for (var kk = 0; kk < num_rots; kk++) {
+            center = rotate_across_seam(center, top ^ left, pivot);
+            var cell = to_valid_cell(center);
+            if (cell) {
+                return cell;
+            }
+            pivot.x += (left ? -1 : 1);
+        }
+        var cell = to_valid_cell(center);
+        if (cell) {
+            return cell;
+        }
+        
+        
         // TEMP
-        var nn = alt;
+        var nn = neighbor;
         var xy = Vadd(nn, nn.n == null ? vec(0,0) : nn.n == 0 ? vec(2/3,1/3) : vec(1/3,2/3));
         xy = pl.pixel_tx(transform(transform(xy, c.skew_tx), c.tri_tx));
         ctx.fillStyle = 'green';
         ctx.fillRect(xy.x, xy.y, 3, 3);
-        
-        if (valid_cell(alt)) {
-            var n = alt.n;
-            alt = transform(alt, c.skew_tx);
-            alt = Vadd(alt, vec(face_tri.x > 2.5 ? -5 : 5, 0));
-            alt = transform(alt, c.inv_skew_tx);
+
+        /*
+        if (!valid_cell(neighbor)) {
+            var n = neighbor.n;
+            neighbor = transform(neighbor, c.skew_tx);
+            neighbor = Vadd(neighbor, vec(center.x > 2.5 ? -5 : 5, 0));
+            neighbor = transform(neighbor, c.inv_skew_tx);
             if (this.mode != 'hex') { // if n != null
-                alt.n = n;
+                neighbor.n = n;
             }
         }                
         
         
-        alt.x = Math.round(alt.x);
-        alt.y = Math.round(alt.y);
+        neighbor.x = Math.round(neighbor.x);
+        neighbor.y = Math.round(neighbor.y);
         //log('  reproj', alt);
-
+*/
         // TEMP
-        var nn = alt;
+        var nn = neighbor;
         var xy = Vadd(nn, nn.n == null ? vec(0,0) : nn.n == 0 ? vec(2/3,1/3) : vec(1/3,2/3));
         xy = pl.pixel_tx(transform(transform(xy, c.skew_tx), c.tri_tx));
         ctx.fillStyle = 'red';
         ctx.fillRect(xy.x, xy.y, 3, 3);
 
-        if (this.cell_ix(alt) != null) {
-            return alt;
-        }
+  //      if (valid_cell(neighbor)) {
+   //         return neighbor;
+   //     }
             
             
         return null;
