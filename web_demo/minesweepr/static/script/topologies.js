@@ -682,6 +682,8 @@ function GeodesicTopo(dim, skew, hex) {
             // radius of pentagon with edge length 1
             pentagon_radius: .5 / Math.sin(Math.PI / 5),
             pentagon_inner_radius: .5 * Math.tan(Math.PI*(.5 - 1/5)),
+            apex_x_top: 1,
+            apex_x_bottom: 4,
         };
         c.inv_skew_tx = invert_transform(c.skew_tx);
         c.inv_tri_tx = invert_transform(c.tri_tx);
@@ -715,7 +717,7 @@ function GeodesicTopo(dim, skew, hex) {
             
                 var p = transform(transform(f.center, c.skew_tx), c.tri_tx);
                 var dir = f.pentagon_anchor_dir;
-                var links_at_corner = (Math.abs((dir % 1.) - .5) < EPSILON);
+                var links_at_corner = f_eq(dir % 1., .5);
                 if (links_at_corner) {
                     var displacement = 1 - c.pentagon_radius;
                     // rotate 180
@@ -787,7 +789,7 @@ function GeodesicTopo(dim, skew, hex) {
     this.num_cells = function () {
         return this.faces.length;
     }
-
+    
     this.adjacent = function (pos) {
         var adj = [];
         var that = this;
@@ -1071,11 +1073,6 @@ function GeodesicTopo(dim, skew, hex) {
         if (this.mode == 'tri') {
             var pos = {x: pi.x, y: pi.y, n: (pf.y > pf.x ? 1 : 0)};
         } else if (this.mode == 'hex') {
-            // return whether p is above the line between p0 and p1
-            var cleave = function(p, p0, p1) {
-                return p.y > (p.x - p0.x) / (p1.x - p0.x) * (p1.y - p0.y) + p0.y;
-            }
-
             var triA = vec(1/3., 2/3.);
             var triB = vec(2/3., 1/3.);
             if (cleave(pf, triA, triB)) {
@@ -1299,9 +1296,9 @@ function GeodesicTopo(dim, skew, hex) {
             if (v < 10) {
                 footprint_vertex = vec(v % 5, 2 - Math.floor(v / 5));
             } else if (v == 10) {
-                footprint_vertex = vec(1, 3);
+                footprint_vertex = vec(this.constants.apex_x_top, 3);
             } else if (v == 11) {
-                footprint_vertex = vec(5 - 1, 0);
+                footprint_vertex = vec(this.constants.apex_x_bottom, 0);
             }
             var p = transform(footprint_vertex, inv_tx);
             
@@ -1339,6 +1336,10 @@ function rads(degs) {
     return Math.PI * degs / 180.;
 }
 
+function f_eq(a, b) {
+    return Math.abs(a - b) < EPSILON;
+}
+    
 function mod(a, b) {
     return ((a % b) + b) % b;
 }
@@ -1378,6 +1379,11 @@ function invert_transform(basis) {
             V: vec(-V.x*det, U.x*det)};
 }
 
+// return whether p is above the line between p0 and p1
+function cleave(p, p0, p1) {
+    return p.y > (p.x - p0.x) / (p1.x - p0.x) * (p1.y - p0.y) + p0.y;
+}
+    
 // center of edge at theta=0
 function inside_regular_poly(nsides, dist, theta, radius) {
     var sector_angle = 2*Math.PI / nsides;
@@ -1404,3 +1410,32 @@ function get_bounds(items, to_vec) {
 }
                     
 
+/*
+sanity check
+        var counts = {};
++        this.for_each_cell(function(pos, cell, board) {
++            var n_adj = 0;
++            board.for_each_neighbor(pos, function(pos, neighb, board) {
++                n_adj++;
++            });
++            if (n_adj != 11 && n_adj != 12) {
++                console.log(pos, n_adj);
++            }
++            counts[n_adj] = (counts[n_adj] || 0) + 1;
++
++            board.for_each_neighbor(pos, function(pos2, neighb, board) {
++                var found = false;
++                board.for_each_neighbor(pos2, function(pos3, neighb, board) {
++                    if (board.topology.cell_ix(pos3) == board.topology.cell_ix(pos)) {
++                        found = true;
++                    }
++                });
++                if (!found) {
++                    console.log('not symmetric', pos, pos2);
++                }
++            });
++
++            
++        });
++        console.log(counts);
+*/

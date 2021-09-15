@@ -200,7 +200,7 @@ def run_trial(args):
     gamestr, kwargs = args
     return autoplay(eval(gamestr), **kwargs)
 
-def trial(new_game_str, tolerance=1e-6, first_safe=True, threaded=True, **kwargs):
+def trial(new_game_str, tolerance=.5e-3, first_safe=True, threaded=True, **kwargs):
   try:
     total_games = 0
     total_wins = 0
