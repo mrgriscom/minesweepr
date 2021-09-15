@@ -921,7 +921,9 @@ function GeodesicTopo(dim, skew, hex) {
         // #pentagon medial -- horiz
         
 
-        if ((f_eq(center.y, 3) || f_eq(center.y, 0)) && f_eq(center.x, Math.round(center.x))) {
+        if ((f_eq(center.y, 3) || f_eq(center.y, 0)) && f_eq(center.x, Math.round(center.x))
+            && !(f_eq(coord.y, 3) || f_eq(coord.y, 0))
+           ) {
             // neighbor is an 'apex' pentagon; collapse to the one rendered pentagon for top/bottom
             var top = (center.y > 1.5);
             return xy_to_ix(vec(top ? c.apex_x_top : c.apex_x_bottom, center.y));
