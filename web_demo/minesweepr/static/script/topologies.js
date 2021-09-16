@@ -877,6 +877,11 @@ function GeodesicTopo(dim, skew, hex) {
             }
             return cell;
         }
+        var ix_to_xy = function(cell) {
+            return transform(Vadd(cell, (neighbor.n == null ? vec(0, 0) :
+                                         neighbor.n == 0 ? vec(2/3, 1/3) : vec(1/3, 2/3))),
+                             c.skew_tx);
+        }
         
         if (valid_cell(neighbor)) {
             return neighbor;
@@ -886,11 +891,9 @@ function GeodesicTopo(dim, skew, hex) {
         var pos = this.face_to_pos(this.faces[this.cell_ix(pos)]);
         var face_tri = (pos.face != -1 ? this.face_num_to_tri(pos.face) : null);
         // xy of 'home' cell
-        var coord = transform(pos, c.skew_tx);
+        var coord = ix_to_xy(pos);
         // xy of potential neighbor
-        var center = transform(Vadd(neighbor, (neighbor.n == null ? vec(0, 0) :
-                                               neighbor.n == 0 ? vec(2/3, 1/3) : vec(1/3, 2/3))),
-                               c.skew_tx);
+        var center = ix_to_xy(neighbor);
 
         var is_apex = function(xy) {
             return (f_eq(xy.y, 3) || f_eq(xy.y, 0)) && f_eq(xy.x, Math.round(xy.x));
@@ -922,6 +925,11 @@ function GeodesicTopo(dim, skew, hex) {
                               Vadd(face_tri, vec(top ? .5 : 0, 0)),
                               Vadd(face_tri, vec(top ? 1 : .5, 1)));
             var pivot = Vadd(face_tri, vec(left ? 0 : 1, top ? 0 : 1));
+        } else if (f_eq(coord.y, 1)) {
+            to_rotate = true;
+            var top = false;
+            var left = cleave(center, vec(Math.floor(coord.x), 0), vec(Math.floor(coord.x) + .5, 1));
+            var pivot = vec(Math.floor(coord.x) + (left ? 0 : 1), 1);
         }
 
         var rotate_across_seam = function(center, clockwise, pivot) {
