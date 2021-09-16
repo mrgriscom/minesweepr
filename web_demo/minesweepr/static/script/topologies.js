@@ -848,26 +848,10 @@ function GeodesicTopo(dim, skew, hex) {
     this.wraparound = function(pos, neighbor) {
         var c = this.constants;
 
-        // TEMP
-        var canv = $('#solution')[0];
-        var ctx = canv.getContext('2d');
-        reset_canvas(canv);
-        var pl = this.canvas_placement(canv);
-
-        // TEMP
-        var nn = pos;
-        var xy = Vadd(nn, nn.n == null ? vec(0,0) : nn.n == 0 ? vec(2/3,1/3) : vec(1/3,2/3));
-        xy = pl.pixel_tx(transform(transform(xy, c.skew_tx), c.tri_tx));
-        //ctx.font = "12px Arial";
-        //ctx.fillText(pos.x+','+pos.y, xy.x, xy.y);
-        //ctx.fillStyle = 'red';
-        //ctx.fillRect(xy.x, xy.y, 3, 3);
-
         var that = this;
         var valid_cell = function(cell) {
             return that.cell_ix(cell) != null;
         }
-
         var xy_to_ix = function(center) {
             var cell = transform(center, c.inv_skew_tx);
             cell = that.to_face_tri(cell);
@@ -909,36 +893,36 @@ function GeodesicTopo(dim, skew, hex) {
         var to_rotate = false;
         if (face_tri == null) {
             if (is_apex(coord)) {
-                // apex pentagon cap
+                // home cell is apex pentagon cap
                 to_rotate = true;
                 var top = f_eq(coord.y, 3);
-                var left = cleave(center, coord, Vadd(coord, vec(-.5, -1)));
-                var pivot = Vadd(coord, vec((left ? -1 : 0) + (top ? 0 : 1), top ? -1 : 1));
+                var apex = coord;
             } else {
-                // pentagon cap on horizontal band; do nothing
+                // home cell is pentagon cap on horizontal band; do nothing
             }
-        } else if (face_tri.y != 1) {
-            // outside the central band
+        } else if (face_tri.y != 1
+                   || f_eq(coord.y, 1)) { // annoying edge case where home cell lies exactly straddling lower edge of horizontal band
+            // home cell outside the central band
             to_rotate = true;
             var top = (face_tri.y > 1);
-            var left = cleave(center,
-                              Vadd(face_tri, vec(top ? .5 : 0, 0)),
-                              Vadd(face_tri, vec(top ? 1 : .5, 1)));
-            var pivot = Vadd(face_tri, vec(left ? 0 : 1, top ? 0 : 1));
-        } else if (f_eq(coord.y, 1)) {
-            to_rotate = true;
-            var top = false;
-            var left = cleave(center, vec(Math.floor(coord.x), 0), vec(Math.floor(coord.x) + .5, 1));
-            var pivot = vec(Math.floor(coord.x) + (left ? 0 : 1), 1);
+            var apex = Vadd(face_tri, top ? vec(1, 1) : vec(0, 0));
         }
-
-        var rotate_across_seam = function(center, clockwise, pivot) {
+        if (to_rotate) {
             var rot_cc = {U: vec(1, 1), V: vec(-1, 0)};
             var rot_clockwise = invert_transform(rot_cc);
-                
+
+            var left = cleave(center, apex, Vadd(apex, vec(.5, 1)));
+            var clockwise = top ^ left;
+            var pivot = vec(apex.x + (left ? 0 : 1) + (top ? -1 : 0), top ? 2 : 1);
+            
             var rot = (clockwise ? rot_clockwise : rot_cc);
-            var rotated = Vadd(transform(Vdiff(center, pivot), rot), pivot);
-            return rotated;
+
+            // repeated rotations change pivot
+            var rotate_across_seam = function(center) {
+                var rotated = Vadd(transform(Vdiff(center, pivot), rot), pivot);
+                pivot.x += (left ? -1 : 1);
+                return rotated;
+            }
         }
 
         var horizontal_wrap = function(center) {
@@ -964,25 +948,9 @@ function GeodesicTopo(dim, skew, hex) {
             if (remaining_rotations == 0) {
                 break;
             }
-            center = rotate_across_seam(center, top ^ left, pivot);
-            pivot.x += (left ? -1 : 1);
+            center = rotate_across_seam(center);
             remaining_rotations--;
         }        
-        
-        // TEMP
-        var nn = neighbor;
-        var xy = Vadd(nn, nn.n == null ? vec(0,0) : nn.n == 0 ? vec(2/3,1/3) : vec(1/3,2/3));
-        xy = pl.pixel_tx(transform(transform(xy, c.skew_tx), c.tri_tx));
-        ctx.fillStyle = 'green';
-        ctx.fillRect(xy.x, xy.y, 3, 3);
-
-        // TEMP
-        var nn = neighbor;
-        var xy = Vadd(nn, nn.n == null ? vec(0,0) : nn.n == 0 ? vec(2/3,1/3) : vec(1/3,2/3));
-        xy = pl.pixel_tx(transform(transform(xy, c.skew_tx), c.tri_tx));
-        ctx.fillStyle = 'red';
-        ctx.fillRect(xy.x, xy.y, 3, 3);
-
         return null;
     }
     
