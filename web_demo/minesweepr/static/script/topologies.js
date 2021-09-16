@@ -654,6 +654,7 @@ function Cube3dTopo (width, height, depth) {
     }
 }
 
+// good god was this one a pain in the ass
 function GeodesicTopo(dim, skew, hex) {
     this.N = dim;
     this.c = skew % dim;
@@ -704,11 +705,10 @@ function GeodesicTopo(dim, skew, hex) {
         c.bounds = get_bounds(this.faces, function(f) {
             return transform(transform(f.center, c.skew_tx), c.tri_tx);
         });
-        //debug -- remove 3
-        c.bounds.xmin -= 3*c.radius;
-        c.bounds.xmax += 3*c.radius;
-        c.bounds.ymin -= 3*c.radius;
-        c.bounds.ymax += 3*c.radius;
+        c.bounds.xmin -= c.radius;
+        c.bounds.xmax += c.radius;
+        c.bounds.ymin -= c.radius;
+        c.bounds.ymax += c.radius;
         c.ix_bounds = get_bounds(this.faces, function(f) { return f.p; });
         c.ix_width = c.ix_bounds.xmax - c.ix_bounds.xmin + 1;
         c.ix_height = c.ix_bounds.ymax - c.ix_bounds.ymin + 1;
@@ -744,9 +744,8 @@ function GeodesicTopo(dim, skew, hex) {
 
     this.cell_name = function (pos) {
         var c = this.constants;
-        // FIXME
-        return pos.y + '-' + pos.x + //pad_to(pos.y - c.ix_bounds.ymin + 1, c.ix_height) + '-' +
-            //pad_to(pos.x - c.ix_bounds.xmin + 1, c.ix_width) +
+        return pad_to(pos.y - c.ix_bounds.ymin + 1, c.ix_height) + '-' +
+            pad_to(pos.x - c.ix_bounds.xmin + 1, c.ix_width) +
             (pos.n != null ? ['A', 'B'][pos.n] : '') + ' (f' + (pos.face + 1) + ')';
     }
 
@@ -834,17 +833,6 @@ function GeodesicTopo(dim, skew, hex) {
         return adj;
     }
 
-    /*
-    this.adjacent_for = function(pos, dx, dy, n) {
-        var neighbor = Vadd(pos, vec(dx, dy));
-        if (n != null) {
-            neighbor.n = n;
-        }
-        
-        neighbor.x = Math.round(neighbor.x);
-        neighbor.y = Math.round(neighbor.y);
-*/
-    
     this.wraparound = function(pos, neighbor) {
         var c = this.constants;
 
@@ -954,11 +942,57 @@ function GeodesicTopo(dim, skew, hex) {
         return null;
     }
     
-    this.increment_ix = function(ix, axis, dir) {
-        // FIXME
-        // hex use x,y,z
-        // tri use up/down, left/right, be smart with current theta0
-        // follow adj in chosen dir
+    this.increment_ix = function(ix, axis, positive) {
+        if (axis != 'x') {
+            // xy rather than rc-based coordinate system
+            positive = !positive;
+        }
+        var incr = (positive ? 1 : -1);
+
+        // choose axis closest to horizontal/vertical, factoring in datum rotation
+        if (axis == 'x') {
+            if (this.c < this.N / 2) {
+                var dir = 'iso-y'
+            } else {
+                var dir = 'iso-x'
+                incr = -incr;
+            }
+        } else if (axis == 'y') {
+            var dir = 'iso-z'
+        } else {
+            var dir = (this.c < this.N / 2 ? 'iso-x' : 'iso-y');
+        }
+
+        if (this.mode == 'hex') {
+            var neighbor = Vadd(ix, {
+                'iso-x': vec(0, incr),
+                'iso-y': vec(incr, 0),
+                'iso-z': vec(incr, incr)
+            }[dir]);
+        } else if (this.mode == 'tri') {
+            // kill me now
+            var c = {x: ix.x, y: ix.y, z: ix.x - ix.y + (1 - ix.n)};
+            var d_axis = {
+                'iso-x': ['z', 'y'],
+                'iso-y': ['x', 'z'],
+                'iso-z': ['x', 'y'],
+            }[dir][ix.n == 0 ^ incr > 0 ? 1 : 0];
+            if (dir == 'iso-x') {
+                incr = (ix.n == 0 ? -1 : 1);
+            }
+            c[d_axis] += incr;
+            var neighbor = {x: c.x, y: c.y, n: 1 - (c.z - c.x + c.y)};
+        }
+        
+        neighbor = this.wraparound(ix, neighbor);
+        if (neighbor == null) {
+            return;
+        }
+
+        // need to update index in-place
+        for (const k of _.keys(ix)) {
+            ix[k] = neighbor[k];
+        }
     }
 
     this.for_select_range = function(pos0, pos1, do_) {
@@ -1086,13 +1120,6 @@ function GeodesicTopo(dim, skew, hex) {
                 }
             }
         }
-        
-/*
-        var _p = (pos != null && this.cell_ix(pos) != null ? pos : null);
-        if (_p != null) {
-            this.adjacent(_p, console.log);
-        }
-*/  
       
         return (pos != null && this.cell_ix(pos) != null ? pos : null);
     }
@@ -1362,6 +1389,7 @@ function topology_sanity_check(topo) {
         var ix = topo.cell_ix(cell);
         var adjacent = topo.adjacent(cell);
         for (const adj_cell of adjacent) {
+            // efficiency has not been prioritized here
             var adj_adj = cells_to_ixs(topo.adjacent(adj_cell));
             if (!adj_adj.includes(ix)) {
                 pass = false;
@@ -1465,7 +1493,3 @@ function get_bounds(items, to_vec) {
     return bounds;
 }
                     
-
-/*
-sanity check
-*/
