@@ -659,7 +659,8 @@ function GeodesicTopo(dim, skew, hex) {
     this.N = dim;
     this.c = skew % dim;
     this.mode = (hex ? 'hex' : 'tri');
-
+    this.dodechahedron = (this.mode == 'hex' && this.N == 1);
+    
     // note: init() called at end
     this.init = function() {
         this.constants = this._static_constants();
@@ -702,22 +703,23 @@ function GeodesicTopo(dim, skew, hex) {
         return c;
     }
     this._dynamic_constants = function(c) {
-        c.bounds = get_bounds(this.faces, function(f) {
-            return transform(transform(f.center, c.skew_tx), c.tri_tx);
-        });
-        c.bounds.xmin -= c.radius;
-        c.bounds.xmax += c.radius;
-        c.bounds.ymin -= c.radius;
-        c.bounds.ymax += c.radius;
-        c.ix_bounds = get_bounds(this.faces, function(f) { return f.p; });
-        c.ix_width = c.ix_bounds.xmax - c.ix_bounds.xmin + 1;
-        c.ix_height = c.ix_bounds.ymax - c.ix_bounds.ymin + 1;
-        
-        $.each(this.faces, function(i, f) {            
+        var that = this;
+        $.each(this.faces, function(i, f) {
             f.proj_center = transform(transform(f.center, c.skew_tx), c.tri_tx);
-            if (f.pentagon_anchor_dir != null) {
-                // TODO if N=1, render a custom dodechahedral net
-            
+            if (that.dodechahedron) {
+                // special, cleaner rendering for pure dodechahedron
+                var dx = 2*Math.sin(2*Math.PI / 5) * c.pentagon_radius;
+                var dy_cap = 2*c.pentagon_inner_radius;
+                var dy_belt = .5*dx / Math.tan(2*Math.PI / 10);
+
+                var x = (f.p.y == 3 ? 0 : f.p.y == 0 ? 4 : f.p.x);
+                var y = f.p.y - 1.5;
+                var up = f.p.y % 2 > 0;
+                
+                f.proj_center.x = c.radius * (x + (y > 0 ? 0 : .5)) * dx;
+                f.proj_center.y = c.radius * Math.sign(y) * (.5*dy_belt + (Math.abs(y) > 1 ? dy_cap : 0));
+                f.rot0 = (up ? -1 : 1) * 5 / 4;
+            } else if (f.pentagon_anchor_dir != null) {
                 var p = transform(transform(f.center, c.skew_tx), c.tri_tx);
                 var dir = f.pentagon_anchor_dir;
                 var links_at_corner = f_eq(dir % 1., .5);
@@ -736,6 +738,15 @@ function GeodesicTopo(dim, skew, hex) {
                 f.rot0 = dir * 5/6;
             }
         });
+
+        c.bounds = get_bounds(this.faces, function(f) { return f.proj_center; });
+        c.bounds.xmin -= c.radius;
+        c.bounds.xmax += c.radius;
+        c.bounds.ymin -= c.radius;
+        c.bounds.ymax += c.radius;
+        c.ix_bounds = get_bounds(this.faces, function(f) { return f.p; });
+        c.ix_width = c.ix_bounds.xmax - c.ix_bounds.xmin + 1;
+        c.ix_height = c.ix_bounds.ymax - c.ix_bounds.ymin + 1;
     }
     
     this.dims = function() {
@@ -962,7 +973,7 @@ function GeodesicTopo(dim, skew, hex) {
         } else {
             var dir = (this.c < this.N / 2 ? 'iso-x' : 'iso-y');
         }
-
+        
         if (this.mode == 'hex') {
             var neighbor = Vadd(ix, {
                 'iso-x': vec(0, incr),
@@ -970,17 +981,42 @@ function GeodesicTopo(dim, skew, hex) {
                 'iso-z': vec(incr, incr)
             }[dir]);
         } else if (this.mode == 'tri') {
+            if (axis == 'z') {
+                return;
+            }
+            
+            var a = transform(transform(vec(1, 0), this.constants.skew_tx), this.constants.tri_tx);
+            var theta = Math.atan(a.y/a.x);
+            var sector = Math.ceil(theta / (Math.PI/6) - .5);
+            if (axis == 'y' && sector == 0) {
+                var dir = 'ortho-y';
+            } else if (axis == 'x' && sector == 1) {
+                
+            } else if (axis == 'y' && sector == 2) {
+                var dir = 'ortho-x';
+            }
             // kill me now
             var c = {x: ix.x, y: ix.y, z: ix.x - ix.y + (1 - ix.n)};
             var d_axis = {
-                'iso-x': ['z', 'y'],
-                'iso-y': ['x', 'z'],
-                'iso-z': ['x', 'y'],
-            }[dir][ix.n == 0 ^ incr > 0 ? 1 : 0];
+                'iso-x': [['y'], ['z']],
+                'iso-y': [['z'], ['x']],
+                'iso-z': [['y'], ['x']],
+                'ortho-y': [['y'], ['x', 'y', '-z']], 
+                'ortho-x': [['x'], ['x', 'y', 'z']], 
+            }[dir][ix.n == 0 ^ incr > 0 ? 0 : 1];
             if (dir == 'iso-x') {
                 incr = (ix.n == 0 ? -1 : 1);
             }
-            c[d_axis] += incr;
+            for (const ax of d_axis) {
+                if (ax[0] == '-') {
+                    var sign = -1;
+                    var _ax = ax.substring(1);
+                } else {
+                    var sign = 1;
+                    var _ax = ax;
+                }
+                c[_ax] += sign*incr;
+            }
             var neighbor = {x: c.x, y: c.y, n: 1 - (c.z - c.x + c.y)};
         }
         
@@ -999,12 +1035,9 @@ function GeodesicTopo(dim, skew, hex) {
         if (pos0.x == pos1.x && pos0.y == pos1.y && pos0.n == pos1.n) {
             do_(pos0);
         } else {
-
-            console.log('fixme');
-            
+            // quickest and dirtiest approach
             // this method can result in some unpleasant jaggedness and disjointedness,
             // especially for triangles, but don't really care
-            // TODO for triangles, select as grid box?
             var f0 = this.faces[this.cell_ix(pos0)];
             var f1 = this.faces[this.cell_ix(pos1)];
             var x0 = Math.min(f0.proj_center.x, f1.proj_center.x) - EPSILON;
@@ -1020,7 +1053,6 @@ function GeodesicTopo(dim, skew, hex) {
                     do_(ix);
                 }
             });
-
         }
     }
 
@@ -1085,9 +1117,28 @@ function GeodesicTopo(dim, skew, hex) {
 
         var pi = vec(Math.floor(coord.x), Math.floor(coord.y));
         var pf = Vdiff(coord, pi);
+
+        var inside_pentagon = function(face) {
+            var delta = Vdiff(canvcoord, face.proj_center);
+            var dist = Vlen(delta);
+            var radius = c.radius * c.pentagon_radius;
+            if (dist > radius) {
+                return false;
+            }
+            var theta = Math.atan2(delta.y, delta.x);
+            theta -= c.geom_angle(5, face.rot0);
+            return inside_regular_poly(5, dist, theta, radius);
+        }
         
         if (this.mode == 'tri') {
             var pos = {x: pi.x, y: pi.y, n: (pf.y > pf.x ? 1 : 0)};
+        } else if (this.dodechahedron) {
+            for (const face of this.faces) {
+                if (inside_pentagon(face)) {
+                    pos = face.p;
+                    break;
+                }
+            }
         } else if (this.mode == 'hex') {
             var triA = vec(1/3., 2/3.);
             var triB = vec(2/3., 1/3.);
@@ -1111,11 +1162,7 @@ function GeodesicTopo(dim, skew, hex) {
             pos = Vadd(pi, incr);
             var face = this.faces[this.cell_ix(pos)];
             if (face != null && face.pentagon_anchor_dir != null) {
-                var delta = Vdiff(canvcoord, face.proj_center);
-                var dist = Vlen(delta);
-                var theta = Math.atan2(delta.y, delta.x);
-                theta -= c.geom_angle(5, face.rot0);
-                if (!inside_regular_poly(5, dist, theta, c.radius * c.pentagon_radius)) {
+                if (!inside_pentagon(face)) {
                     pos = null;
                 }
             }
@@ -1329,6 +1376,16 @@ function GeodesicTopo(dim, skew, hex) {
     this.sanity_check = function() {
         var pass = topology_sanity_check(this);
 
+        var expected_num_faces = function(topo) {
+            var n = topo.N - topo.c;
+            var m = topo.c;
+            var T = m*m + m*n + n*n;
+            return (topo.mode == 'hex' ? 10*T + 2 : 20*T);
+        }
+        if (this.num_cells() != expected_num_faces(this)) {
+            console.log('incorrect # cells', this.num_cells(), 'vs', expected_num_faces(this));
+        }
+        
         var counts = {};
         var that = this;
         this.for_each_index(function(cell) {
