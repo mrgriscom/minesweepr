@@ -953,12 +953,12 @@ function GeodesicTopo(dim, skew, hex) {
         return null;
     }
     
-    this.increment_ix = function(ix, axis, positive) {
+    this.increment_ix = function(ix, axis, incr) {
+        var incr = (incr ? 1 : -1);
         if (axis != 'x') {
             // xy rather than rc-based coordinate system
-            positive = !positive;
+            incr = -incr;
         }
-        var incr = (positive ? 1 : -1);
 
         // choose axis closest to horizontal/vertical, factoring in datum rotation
         if (axis == 'x') {
@@ -981,41 +981,36 @@ function GeodesicTopo(dim, skew, hex) {
                 'iso-z': vec(incr, incr)
             }[dir]);
         } else if (this.mode == 'tri') {
+            // triangular grid is more amenable to 2-axis orthogonal navigation
             if (axis == 'z') {
                 return;
             }
-            
             var a = transform(transform(vec(1, 0), this.constants.skew_tx), this.constants.tri_tx);
             var theta = Math.atan(a.y/a.x);
             var sector = Math.ceil(theta / (Math.PI/6) - .5);
             if (axis == 'y' && sector == 0) {
                 var dir = 'ortho-y';
             } else if (axis == 'x' && sector == 1) {
-                
+                var dir = 'ortho-z';
+                incr = -incr;
             } else if (axis == 'y' && sector == 2) {
                 var dir = 'ortho-x';
             }
+            
             // kill me now
             var c = {x: ix.x, y: ix.y, z: ix.x - ix.y + (1 - ix.n)};
-            var d_axis = {
-                'iso-x': [['y'], ['z']],
-                'iso-y': [['z'], ['x']],
-                'iso-z': [['y'], ['x']],
-                'ortho-y': [['y'], ['x', 'y', '-z']], 
-                'ortho-x': [['x'], ['x', 'y', 'z']], 
-            }[dir][ix.n == 0 ^ incr > 0 ? 0 : 1];
-            if (dir == 'iso-x') {
-                incr = (ix.n == 0 ? -1 : 1);
-            }
-            for (const ax of d_axis) {
-                if (ax[0] == '-') {
-                    var sign = -1;
-                    var _ax = ax.substring(1);
-                } else {
-                    var sign = 1;
-                    var _ax = ax;
-                }
-                c[_ax] += sign*incr;
+            var delta = {
+                'iso-x': [['-z'], ['+y']],
+                'iso-y': [['+x'], ['+z']],
+                'iso-z': [['+x'], ['+y']],
+                'ortho-x': [['+x'], ['+x', '+y', '+z']],
+                'ortho-y': [['+x', '+y', '-z'], ['+y']],
+                'ortho-z': [['+x', '-y', '+z'], ['+z']],                
+            }[dir][ix.n == 0 ^ incr < 0 ? 0 : 1];
+            for (const d_axis of delta) {
+                var sign = {'+': 1, '-': -1}[d_axis[0]];
+                var sub_axis = d_axis.substring(1);
+                c[sub_axis] += sign * incr;
             }
             var neighbor = {x: c.x, y: c.y, n: 1 - (c.z - c.x + c.y)};
         }
@@ -1383,6 +1378,7 @@ function GeodesicTopo(dim, skew, hex) {
             return (topo.mode == 'hex' ? 10*T + 2 : 20*T);
         }
         if (this.num_cells() != expected_num_faces(this)) {
+            pass = false;
             console.log('incorrect # cells', this.num_cells(), 'vs', expected_num_faces(this));
         }
         
