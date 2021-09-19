@@ -196,7 +196,7 @@ function set_defaults() {
     });
     
     selectChoice($('input[name="topo"][value="' + defaults.topo + '"]'));
-    selectChoice($('#first_safe'), !ANALYZER);
+    selectEnum($('#first_safe'), ANALYZER ? 'none' : 'safe');
     selectChoice($('#show_mines'), false);
     selectChoice($('#show_sol'));
     selectChoice($('#highlighting'));
@@ -237,7 +237,7 @@ function get_preset_board() {
     var board = parse_board(params.get('board'));
     if (board != null && !ANALYZER) {
         // TODO, in order to support:
-        // need to verify validity of board (don't allow inconsistent states)
+        // need to verify validity of board (don't allow inconsistent states, correct # mines, etc)
         // handle first-safe mine swapping satisfactorily
         // update state vars like first_move and total_risk
         // allow visible/exploded mines from the start?
@@ -247,12 +247,23 @@ function get_preset_board() {
     return board;
 }
 
-function get_setting(name) {
-    return $('#' + name).attr('checked');
+function get_setting(name, nullif) {
+    var elem = $('#' + name);
+    if (elem.is('select')) {
+        var val = elem.val();
+        return (val == nullif ? null : val);
+    } else {
+        return elem.attr('checked');
+    }
 }
 
 function selectChoice(elem, enabled) {
     elem.attr('checked', enabled != null ? enabled : true);
+    elem.trigger('change');
+}
+
+function selectEnum(elem, val) {
+    elem.val(val);
     elem.trigger('change');
 }
 
@@ -316,11 +327,11 @@ function get_topo() {
 }
 
 function new_game(board_data) {
-    var first_safe = get_setting('first_safe');
+    var first_safe = get_setting('first_safe', 'none');
     var topo = get_topo();
     var minespec = parsemine($('#mines').val(), topo.num_cells());
-    var board = new_board(topo, minespec, board_data);
-    GAME = new GameSession(board, $('#game_canvas')[0], $('#solution')[0], $('#cursor')[0], first_safe);
+    var board = new_board(topo, minespec, first_safe, board_data);
+    GAME = new GameSession(board, $('#game_canvas')[0], $('#solution')[0], $('#cursor')[0]);
     
     game_reset();
     GAME.start();
@@ -364,8 +375,8 @@ function new_topo(type, w, h, d, skew) {
     return topo;
 }
 
-function new_board(topo, minespec, board_data) {
-    var board = new Board(topo, ANALYZER);
+function new_board(topo, minespec, first_safe, board_data) {
+    var board = new Board(topo, first_safe, ANALYZER);
     board[{'count': 'populate_n', 'prob': 'populate_p'}[minespec.mode]](minespec.k, board_data);
     return board;
 }
@@ -386,16 +397,14 @@ function undo() {
     }
 }
 
-function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) {
+function GameSession(board, canvas, solution_canvas, cursor_canvas) {
     this.board = board;
-    this.first_safe = first_safe;
     this.cursor = (ANALYZER ? new EditCursor(this, cursor_canvas) : null);
     
     this.start = function() {
         this.seq = next_seq();
         this.status = 'in_play';
         this.total_risk = 0.;
-        this.first_move = true;
         this.solution = null;
         // a list of solved mines (as opposed to user-flagged mines), to make subsequent solving
         // more efficient
@@ -410,7 +419,7 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
         this.draw_ctx.draw_board();
         reset_canvas(this.draw_ctx.solution_canvas);
         
-        if (this.first_safety()) {
+        if (this.board.first_safety()) {
             this.solve_first_safe();
         } else {
             this.solve();
@@ -499,10 +508,6 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
     }
     
     this.manual_move = function(pos, type) {
-        if (this.first_safety() && type == 'sweep') {
-            this.board.ensure_safety(pos);
-        }
-        
         var game = this;
         this.action(function(uncovered) {
             if (type == 'sweep') {
@@ -527,8 +532,9 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
             // we don't add known safe cells to uncovered for efficiency,
             // but update_risk could handle it if we did
             
-            if (game.first_safety()) {
-                game.board.uncover(game.board.safe_cell(), true);
+            if (game.board.first_safety()) {
+                var rand = _.sample(game.board.cells).pos;
+                game.board.uncover(rand, true);
                 action = true;
             } else if (solu) {
                 var guesses = Object.keys(solu.best_guesses); 
@@ -573,7 +579,6 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
         if (changed) {
             this.update_risk(uncovered_cells);
             this.solution = null;
-            this.first_move = false;
         }
         // note this is always called even if the move was a no-op, mostly because we need to update mine counts
         // in response to flagging changes, and tracking flag changes vs. no-ops is a big PITA; triggering
@@ -737,14 +742,6 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
         return get_setting('show_sol') && this.status == 'in_play';
     }
     
-    this.first_safety = function() {
-        if (this.board_full == null) {
-            var board_full = (this.board.mine_counts().total == this.board.num_cells());
-        }
-        
-        return (this.first_safe && this.first_move && !board_full);
-    }
-    
     this.solve_first_safe = function() {
         var sol_context = new_solving_context(this);
         sol_context.update(new Solution({_other: 0.}), 0.);
@@ -760,7 +757,6 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
         return {
             seq: this.seq,
             risk: this.total_risk,
-            first: this.first_move,
             board_state: this.board.snapshot(),
             known_mines: this.known_mines.slice(0),
         };
@@ -770,7 +766,6 @@ function GameSession(board, canvas, solution_canvas, cursor_canvas, first_safe) 
         this.seq = snapshot.seq;
         this.status = 'in_play';
         this.total_risk = snapshot.risk;
-        this.first_move = snapshot.first;
         this.known_mines = snapshot.known_mines.slice(0);
         
         // these must happen in this order
@@ -854,7 +849,7 @@ function DrawContext (sess, canvas, solution_canvas) {
     
     this._params = function() {
         return {
-            show_mines: sess.show_mines() && !sess.first_safety(),
+            show_mines: sess.show_mines() && !sess.board.first_safety(),
         }
     }
     this.params = this._params();

@@ -189,7 +189,15 @@ td {
   </table>
   <table>
     <tr>
-      <td><span id="firstsafe_opt"><input id="first_safe" type="checkbox"> <label for="first_safe">1<sup>st</sup> click is safe</label></span></td>
+      <td>
+        <span id="firstsafe_opt">
+          <label for="first_safe">1<sup>st</sup> click </label>
+          <select id="first_safe">
+            <option value="safe">safe</option>
+            <option value="opening">opening</option>
+            <option value="none">at risk</option>
+          </select>
+      </span></td>
       <td align="right">
         &nbsp;&nbsp;&nbsp;<span class="help">(ctrl+enter)</span>&nbsp;<a id="start" href="#"><b>start new game</b></a>
       </td>

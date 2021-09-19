@@ -26,10 +26,12 @@ BEST_GUESS_COLOR = '255,255,0';  // variable alpha
 
 EPSILON = 1.0e-6;
 
-function Board (topology, for_analysis_only) {
+function Board (topology, first_safe, for_analysis_only) {
     this.topology = topology;
     this.cells = [];
     this.cells_by_name = {};
+    this.first_safe = first_safe;
+    this.first_move;
 
     this.populate_n = function (num_mines, board) {
         this.num_mines = Math.min(num_mines, for_analysis_only ? 'Infinity' : this.topology.num_cells());
@@ -47,6 +49,16 @@ function Board (topology, for_analysis_only) {
             cell_data = null;
         }
         cell_data = cell_data || (for_analysis_only ? null : this[distr_func]());
+
+        if (cell_data != null) {
+            this.first_move = true;
+            for (const cell of cell_data) {
+                if (cell.visible) {
+                    this.first_move = false;
+                    break;
+                }
+            }
+        }
         
         for (var i = 0; i < this.topology.num_cells(); i++) {
             this.cells.push(new Cell());
@@ -65,28 +77,83 @@ function Board (topology, for_analysis_only) {
             cell.draw_ctx = draw_ctx;
         });
     }
+
+    // whether the board is in a state where the next move is the 1st move & guaranteed to be safe
+    this.first_safety = function() {
+        if (this.num_mines == null) {
+            // fixed probability mode -- will always clear out cells as necessary
+            var board_full = false;
+        } else {
+            var board_full = (this.num_mines == this.num_cells());
+        }
+        return (this.first_safe != null && this.first_move && !board_full);
+    }
     
-    //reshuffle board so 'pos' will not be a mine
-    //only allowed to be called before any cells are uncovered
-    //assumes at least one cell on the board is safe
-    this.ensure_safety = function(pos) {
-        var cell = this.get_cell(pos);
-        if (cell.state == 'mine') {
-            var swap_pos = this.safe_cell();
-            this.get_cell(swap_pos).set({state: 'mine'});
-            cell.set({state: null});
+    // reshuffle board so 'pos' will not be a mine, and, if desired, its neighbors as well (up to as many remaining free spaces
+    // are available)
+    // only allowed to be called before any cells are uncovered
+    // assumes at least one cell on the board is safe
+    this.ensure_safety = function(pos, clear_adjacent) {
+        var board = this;
 
-            // re-init neighboring mine counts for relevant cells
-            var board = this;
-            var recalc_neighbors = function(pos) {
-                board.for_each_neighbor(pos, function(pos, neighb, board) {
-                    board.init_cell_state(pos, neighb);
-                });
-            };
+        // cells to ensure are clear
+        var ensure_safe_cells = [];
+        if (clear_adjacent) {
+            this.for_each_neighbor(pos, function(pos, neighb, board) {
+                ensure_safe_cells.push(neighb);
+            });
+            // randomize which neighbors get cleared if there are not enough free spaces left on the board to clear all
+            ensure_safe_cells = _.shuffle(ensure_safe_cells);
+        }
+        // add clicked-on cell to front so it always gets priority
+        ensure_safe_cells.unshift(this.get_cell(pos));
 
-            this.init_cell_state(pos, cell);
-            recalc_neighbors(pos);
-            recalc_neighbors(swap_pos);
+        var cells_to_make_safe = _.filter(ensure_safe_cells, function(cell) { return cell.state == 'mine'; });
+
+        var recalc_ixs = {};
+        var change_cell_state = function(cell, is_mine) {
+            cell.set({state: is_mine ? 'mine' : null});
+
+            var tag_cell_for_recalc = function(pos) {
+                recalc_ixs[board.topology.cell_ix(pos)] = true;
+            }
+            tag_cell_for_recalc(cell.pos);
+            board.for_each_neighbor(cell.pos, function(pos, neighb, board) {
+                tag_cell_for_recalc(neighb.pos);
+            });
+        }
+
+        if (this.mine_prob != null) {
+            // fixed probability mode -- don't swap mines just clear out cells -- note: this will change the # of mines on the board
+            for (const cell of cells_to_make_safe) {
+                change_cell_state(cell, false);
+            }
+        } else {
+            // candidate clear cells to dump the mines
+            var avail_safe_cells = [];
+            this.for_each_cell(function (pos, cell, board) {
+                if (cell.state != 'mine') {
+                    avail_safe_cells.push(pos);
+                }
+            });
+            var ensure_safe_ixs = _.map(ensure_safe_cells, function(cell) { return board.topology.cell_ix(cell.pos) });
+            // don't put a mine back in a cell that we must ensure is safe
+            avail_safe_cells = _.filter(avail_safe_cells, function(pos) {
+                return !ensure_safe_ixs.includes(board.topology.cell_ix(pos));
+            });
+
+            // swap the mines
+            var donor_cells = _.sample(avail_safe_cells, cells_to_make_safe.length);
+            for (var i = 0; i < donor_cells.length; i++) {
+                change_cell_state(cells_to_make_safe[i], false);
+                change_cell_state(this.get_cell(donor_cells[i]), true);
+            }
+        }
+
+        // recalc counts for all affected cells
+        for (const ix of _.keys(recalc_ixs)) {
+            var cell = this.cells[ix];
+            this.init_cell_state(cell.pos, cell);
         }
     }
 
@@ -106,6 +173,11 @@ function Board (topology, for_analysis_only) {
     //uncover a cell, triggering any cascades
     //return whether we survived, null if nothing uncovered
     this.uncover = function (pos, force) {
+        if (this.first_safety()) {
+            this.ensure_safety(pos, this.first_safe == 'opening');
+        }
+        this.first_move = false;
+        
         // can't do straight up recursion for cascades since very large boards might
         // exceed call stack limit
 
@@ -205,7 +277,7 @@ function Board (topology, for_analysis_only) {
         for (var i = 0; i < this.num_cells(); i++) {
             m[i] = {state: (i < this.num_mines ? 'mine' : null)};
         }
-        shuffle(m);
+        m = _.shuffle(m);
         return m;
     }
 
@@ -249,17 +321,7 @@ function Board (topology, for_analysis_only) {
         });
         return {total: total_mines, flagged: mines_flagged, flag_error: nonmines_flagged};
     }
-
-    this.safe_cell = function () {
-        var c = [];
-        this.for_each_cell(function (pos, cell, board) {
-            if (!cell.visible && cell.state != 'mine') {
-                c.push(pos);
-            }
-        });
-        return choose_rand(c);
-    }
-
+    
     this.for_each_cell = function (func) {
         var board = this;
         this.topology.for_each_index(function(ix) {
@@ -405,6 +467,9 @@ function Board (topology, for_analysis_only) {
     this.snapshot = function() {
         var visible = {};
         var flagged = {};
+        // mines are assumed static during the game, however 1st move safety can move (and remove) mines, so
+        // save and restore them on the first move only
+        var init_state = [];
         this.for_each_cell(function(pos, cell, board) {
             if (cell.visible) {
                 visible[cell.name] = (for_analysis_only ? cell.state : true);
@@ -412,11 +477,22 @@ function Board (topology, for_analysis_only) {
             if (cell.flagged) {
                 flagged[cell.name] = true;
             }
+            if (board.first_move && !for_analysis_only) {
+                // first_move should be unset in analysis mode, but just in case it stays stuck on default true
+                init_state.push(cell.state);
+            }
         });
-        return {visible: visible, flagged: flagged, num_mines: this.num_mines, mine_prob: this.mine_prob};
+        return {
+            visible: visible,
+            flagged: flagged,
+            num_mines: this.num_mines,
+            mine_prob: this.mine_prob,
+            init_state: init_state
+        };
     }
 
     this.restore = function(snapshot) {
+        this.first_move = _.keys(snapshot.visible).length == 0;
         this.for_each_cell(function(pos, cell, board) {
             var vals = {
                 visible: cell.name in snapshot.visible,
@@ -424,6 +500,8 @@ function Board (topology, for_analysis_only) {
             };
             if (for_analysis_only) {
                 vals.state = snapshot.visible[cell.name];
+            } else if (board.first_move) {
+                vals.state = snapshot.init_state[board.topology.cell_ix(pos)];
             }
             cell.set(vals);
         });
@@ -527,7 +605,9 @@ function Cell () {
         // can be redrawn in other circumstances. this is because almost all cells change with a new
         // solution, thus more efficient to redraw in bulk
         var redraw_solution = false;
-        if ('visible' in old || 'flagged' in old || ('state' in old && this.visible)) {
+        if ('visible' in old || 'flagged' in old
+            || ('state' in old && this.visible) // analyzer changes
+            || old.state == 'mine') { // restoring mines moved for 1st-click safety with 'show mines' on
             redraw_board = true;
         }
         if ('params' in old) {
@@ -771,17 +851,6 @@ function parse_board(s) {
 }
 
 
-
-function shuffle(data) {
-    var buf = [];
-    for (var i = 0; i < data.length; i++) {
-        buf[i] = [Math.random(), data[i]];
-    }
-    buf.sort(function (a, b) { return a[0] - b[0]; });
-    for (var i = 0; i < data.length; i++) {
-        data[i] = buf[i][1];
-    }    
-}
 
 function choose_rand(data) {
     return data[Math.floor(Math.random() * data.length)];
